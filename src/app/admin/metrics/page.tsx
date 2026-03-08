@@ -10,10 +10,16 @@ type View = "list" | "editMetric" | "categories" | "stations" | "editStation";
 
 export default function AdminMetricsPage() {
   const router = useRouter();
-  const { stations, setStations, metrics, setMetrics, categories, setCategories } = useStore();
+  const {
+    stations, metrics, categories, loading,
+    saveStation, deleteStation: removeStation,
+    saveMetric, deleteMetric: removeMetric,
+    addCategory, renameCategory, deleteCategory,
+  } = useStore();
 
   const [view, setView] = useState<View>("list");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Metric form
   const [form, setForm] = useState<Metric>({ id: "", name: "", acronym: "", category: "", station: "", instructions: "", measurementRules: "", gear: "", drills: "" });
@@ -31,53 +37,64 @@ export default function AdminMetricsPage() {
   // --- Metric handlers ---
   const handleEditMetric = (metric: Metric) => { setEditingId(metric.id); setForm({ ...metric }); setView("editMetric"); };
   const handleNewMetric = () => { setForm({ id: `metric-${Date.now()}`, name: "", acronym: "", category: "", station: "", instructions: "", measurementRules: "", gear: "", drills: "" }); setEditingId(null); setView("editMetric"); };
-  const handleSaveMetric = (e: React.FormEvent) => {
+  const handleSaveMetric = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) return;
-    setMetrics((prev) => {
-      const exists = prev.find((m) => m.id === form.id);
-      if (exists) return prev.map((m) => (m.id === form.id ? form : m));
-      return [...prev, form];
-    });
+    if (!form.name || saving) return;
+    setSaving(true);
+    await saveMetric(form);
+    setSaving(false);
     setView("list");
   };
-  const handleDeleteMetric = (id: string) => { setMetrics((prev) => prev.filter((m) => m.id !== id)); };
+  const handleDeleteMetric = async (id: string) => {
+    await removeMetric(id);
+  };
 
   // --- Station handlers ---
   const handleEditStation = (station: Station) => { setStationForm({ ...station }); setView("editStation"); };
   const handleNewStation = () => { setStationForm({ id: `station-${Date.now()}`, name: "", icon: "zap", description: "" }); setView("editStation"); };
-  const handleSaveStation = (e: React.FormEvent) => {
+  const handleSaveStation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!stationForm.name) return;
-    setStations((prev) => {
-      const exists = prev.find((s) => s.id === stationForm.id);
-      if (exists) return prev.map((s) => (s.id === stationForm.id ? stationForm : s));
-      return [...prev, stationForm];
-    });
+    if (!stationForm.name || saving) return;
+    setSaving(true);
+    await saveStation(stationForm);
+    setSaving(false);
     setView("stations");
   };
-  const handleDeleteStation = (id: string) => {
-    setStations((prev) => prev.filter((s) => s.id !== id));
-    setMetrics((prev) => prev.map((m) => m.station === id ? { ...m, station: "" } : m));
+  const handleDeleteStation = async (id: string) => {
+    await removeStation(id);
   };
 
   // --- Category handlers ---
-  const handleAddCategory = () => { const t = newCategory.trim(); if (t && !categories.some((c) => c.toLowerCase() === t.toLowerCase())) { setCategories((prev) => [...prev, t]); setNewCategory(""); } };
-  const handleDeleteCategory = (idx: number) => { setCategories((prev) => prev.filter((_, i) => i !== idx)); };
+  const handleAddCategory = async () => {
+    const t = newCategory.trim();
+    if (t && !categories.some((c) => c.toLowerCase() === t.toLowerCase())) {
+      await addCategory(t);
+      setNewCategory("");
+    }
+  };
+  const handleDeleteCategory = async (idx: number) => {
+    await deleteCategory(categories[idx]);
+  };
   const handleStartRename = (idx: number) => { setRenamingIdx(idx); setRenameValue(categories[idx]); };
-  const handleConfirmRename = () => {
+  const handleConfirmRename = async () => {
     if (renamingIdx === null) return;
     const t = renameValue.trim();
     if (t) {
-      const oldVal = categories[renamingIdx].toLowerCase();
-      setCategories((prev) => prev.map((c, i) => (i === renamingIdx ? t : c)));
-      setMetrics((prev) => prev.map((m) => m.category === oldVal ? { ...m, category: t.toLowerCase() } : m));
+      await renameCategory(categories[renamingIdx], t);
     }
     setRenamingIdx(null); setRenameValue("");
   };
 
   const inputCls = "h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)]";
   const textareaCls = "rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] p-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)] resize-none";
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full bg-[var(--background)]">
+        <span className="font-secondary text-sm text-[var(--muted-foreground)]">Loading...</span>
+      </div>
+    );
+  }
 
   // ===================== EDIT STATION VIEW =====================
   if (view === "editStation") {
@@ -123,7 +140,9 @@ export default function AdminMetricsPage() {
           </div>
           <div className="flex gap-3 pt-2 pb-6">
             <button type="button" onClick={() => setView("stations")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-primary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">Cancel</button>
-            <button type="submit" className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-primary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">Save Station</button>
+            <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-primary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
+              {saving ? "Saving..." : "Save Station"}
+            </button>
           </div>
         </form>
       </div>
@@ -211,7 +230,7 @@ export default function AdminMetricsPage() {
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
           <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
           <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
-            {metrics.find((m) => m.id === form.id) ? "Edit Metric" : "New Metric"}
+            {editingId ? "Edit Metric" : "New Metric"}
           </h1>
         </div>
         <form onSubmit={handleSaveMetric} className="flex-1 overflow-auto p-4 flex flex-col gap-4">
@@ -266,7 +285,9 @@ export default function AdminMetricsPage() {
           </div>
           <div className="flex gap-3 pt-2 pb-6">
             <button type="button" onClick={() => setView("list")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-primary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">Cancel</button>
-            <button type="submit" className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-primary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">Save Metric</button>
+            <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-primary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
+              {saving ? "Saving..." : "Save Metric"}
+            </button>
           </div>
         </form>
       </div>

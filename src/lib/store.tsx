@@ -1,21 +1,13 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-
-function loadFromStorage<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : fallback;
-  } catch {
-    return fallback;
-  }
-}
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { supabase } from "./supabase";
 
 // --- Types ---
 
 export interface Station {
   id: string;
+  slug?: string;
   name: string;
   icon: string;
   description: string;
@@ -42,28 +34,6 @@ export const AVAILABLE_ICONS = [
   "mountain", "bike", "swords", "shield", "star", "circle-dot",
 ];
 
-// --- Defaults ---
-
-const defaultStations: Station[] = [
-  { id: "rsi", name: "RSI", icon: "zap", description: "Reactive Strength Index" },
-  { id: "sprint", name: "Sprint Splits", icon: "timer", description: "10m / 20m / 40m" },
-  { id: "vertical", name: "Vertical Jump", icon: "arrow-up-right", description: "Standing / Approach" },
-  { id: "balance", name: "Balance", icon: "scale", description: "Single Leg Hold" },
-  { id: "explosiveness", name: "Explosiveness", icon: "dumbbell", description: "Broad Jump / Bounds" },
-  { id: "strength", name: "Strength", icon: "ruler", description: "Max Rep Testing" },
-];
-
-const defaultMetrics: Metric[] = [
-  { id: "rsi", name: "Reactive Strength Index", acronym: "RSI", category: "power", station: "rsi", instructions: "Athlete performs a depth jump from a 30cm box onto a contact mat. Measure flight time vs contact time.", measurementRules: "Best of 3 attempts. Rest 60s between attempts.", gear: "Contact mat, 30cm box", drills: "Depth jumps, Pogo hops" },
-  { id: "sprint", name: "Sprint Splits", acronym: "Sprint", category: "speed", station: "sprint", instructions: "Athlete sprints 40m through electronic timing gates at 10m, 20m, and 40m.", measurementRules: "Best of 2 attempts. Full recovery between runs.", gear: "Electronic timing gates", drills: "Block starts, Acceleration runs" },
-  { id: "vertical", name: "Vertical Jump", acronym: "VJ", category: "power", station: "vertical", instructions: "Athlete performs a countermovement jump reaching for Vertec vanes.", measurementRules: "Best of 3 attempts. Standing reach measured first.", gear: "Vertec or jump mat", drills: "Squat jumps, Tuck jumps" },
-  { id: "balance", name: "Single Leg Balance", acronym: "Balance", category: "stability", station: "balance", instructions: "Athlete stands on one leg, eyes open, hands on hips. Time until loss of balance.", measurementRules: "Max 60 seconds. Both legs tested.", gear: "Stopwatch, flat surface", drills: "Single leg RDL, Bosu ball stands" },
-  { id: "explosiveness", name: "Standing Broad Jump", acronym: "SBJ", category: "power", station: "explosiveness", instructions: "Athlete performs a standing broad jump from behind a line. Measure from takeoff line to nearest heel landing.", measurementRules: "Best of 3 attempts.", gear: "Tape measure, flat surface", drills: "Bounds, Box jumps" },
-  { id: "strength", name: "Max Rep Test", acronym: "Strength", category: "strength", station: "strength", instructions: "Athlete performs max reps of a given exercise in proper form.", measurementRules: "Stop at form breakdown. Spotter required.", gear: "Barbell, plates, spotter", drills: "Progressive overload sets" },
-];
-
-const defaultCategories = ["Power", "Speed", "Stability", "Strength", "Endurance"];
-
 // --- Context ---
 
 interface StoreContextType {
@@ -73,21 +43,186 @@ interface StoreContextType {
   setMetrics: React.Dispatch<React.SetStateAction<Metric[]>>;
   categories: string[];
   setCategories: React.Dispatch<React.SetStateAction<string[]>>;
+  loading: boolean;
+  saveStation: (station: Station) => Promise<void>;
+  deleteStation: (id: string) => Promise<void>;
+  saveMetric: (metric: Metric) => Promise<void>;
+  deleteMetric: (id: string) => Promise<void>;
+  addCategory: (name: string) => Promise<void>;
+  renameCategory: (oldName: string, newName: string) => Promise<void>;
+  deleteCategory: (name: string) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [stations, setStations] = useState<Station[]>(() => loadFromStorage("tm_stations", defaultStations));
-  const [metrics, setMetrics] = useState<Metric[]>(() => loadFromStorage("tm_metrics", defaultMetrics));
-  const [categories, setCategories] = useState<string[]>(() => loadFromStorage("tm_categories", defaultCategories));
+  const [stations, setStations] = useState<Station[]>([]);
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { localStorage.setItem("tm_stations", JSON.stringify(stations)); }, [stations]);
-  useEffect(() => { localStorage.setItem("tm_metrics", JSON.stringify(metrics)); }, [metrics]);
-  useEffect(() => { localStorage.setItem("tm_categories", JSON.stringify(categories)); }, [categories]);
+  // Maps for resolving DB foreign keys to local slugs/names
+  const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
+  const [stationMap, setStationMap] = useState<Record<string, string>>({});
+
+  // Load from Supabase on mount
+  useEffect(() => {
+    async function load() {
+      const [catRes, staRes, metRes] = await Promise.all([
+        supabase.from("categories").select("*").order("name"),
+        supabase.from("stations").select("*").order("sort_order"),
+        supabase.from("metrics").select("*"),
+      ]);
+
+      const cats = catRes.data || [];
+      const stas = staRes.data || [];
+      const mets = metRes.data || [];
+
+      // Build lookup maps: uuid -> name/slug
+      const catMap: Record<string, string> = {};
+      const staMap: Record<string, string> = {};
+      cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
+      stas.forEach((s: { id: string; slug: string }) => { staMap[s.id] = s.slug; });
+      setCategoryMap(catMap);
+      setStationMap(staMap);
+
+      setCategories(cats.map((c: { name: string }) => c.name));
+      setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string }) => ({
+        id: s.slug,
+        slug: s.slug,
+        name: s.name,
+        icon: s.icon,
+        description: s.description,
+      })));
+      setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; station_id: string; instructions: string; measurement_rules: string; gear: string; drills: string }) => ({
+        id: m.id,
+        name: m.name,
+        acronym: m.acronym,
+        category: (catMap[m.category_id] || "").toLowerCase(),
+        station: staMap[m.station_id] || "",
+        instructions: m.instructions,
+        measurementRules: m.measurement_rules,
+        gear: m.gear,
+        drills: m.drills,
+      })));
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  // --- Station CRUD ---
+  const saveStation = useCallback(async (station: Station) => {
+    const slug = station.id;
+    const { data: existing } = await supabase.from("stations").select("id").eq("slug", slug).single();
+    if (existing) {
+      await supabase.from("stations").update({
+        name: station.name,
+        icon: station.icon,
+        description: station.description,
+      }).eq("id", existing.id);
+    } else {
+      await supabase.from("stations").insert({
+        slug,
+        name: station.name,
+        icon: station.icon,
+        description: station.description,
+        sort_order: 99,
+      });
+    }
+    setStations(prev => {
+      const idx = prev.findIndex(s => s.id === station.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = station;
+        return next;
+      }
+      return [...prev, station];
+    });
+  }, []);
+
+  const deleteStation = useCallback(async (id: string) => {
+    await supabase.from("stations").delete().eq("slug", id);
+    setStations(prev => prev.filter(s => s.id !== id));
+  }, []);
+
+  // --- Metric CRUD ---
+  const saveMetric = useCallback(async (metric: Metric) => {
+    // Resolve category name -> uuid
+    const { data: catRow } = await supabase
+      .from("categories")
+      .select("id")
+      .ilike("name", metric.category)
+      .single();
+
+    // Resolve station slug -> uuid
+    const { data: staRow } = await supabase
+      .from("stations")
+      .select("id")
+      .eq("slug", metric.station)
+      .single();
+
+    const row = {
+      name: metric.name,
+      acronym: metric.acronym,
+      category_id: catRow?.id || null,
+      station_id: staRow?.id || null,
+      instructions: metric.instructions,
+      measurement_rules: metric.measurementRules,
+      gear: metric.gear,
+      drills: metric.drills,
+    };
+
+    // Check if this is a UUID (existing DB record) or a local slug
+    const isUUID = metric.id.includes("-") && metric.id.length > 30;
+    if (isUUID) {
+      await supabase.from("metrics").update(row).eq("id", metric.id);
+      setMetrics(prev => prev.map(m => m.id === metric.id ? metric : m));
+    } else {
+      const { data } = await supabase.from("metrics").insert(row).select("id").single();
+      const newMetric = { ...metric, id: data?.id || metric.id };
+      setMetrics(prev => {
+        const idx = prev.findIndex(m => m.id === metric.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = newMetric;
+          return next;
+        }
+        return [...prev, newMetric];
+      });
+    }
+  }, []);
+
+  const deleteMetric = useCallback(async (id: string) => {
+    await supabase.from("metrics").delete().eq("id", id);
+    setMetrics(prev => prev.filter(m => m.id !== id));
+  }, []);
+
+  // --- Category CRUD ---
+  const addCategory = useCallback(async (name: string) => {
+    await supabase.from("categories").insert({ name });
+    setCategories(prev => [...prev, name]);
+  }, []);
+
+  const renameCategory = useCallback(async (oldName: string, newName: string) => {
+    await supabase.from("categories").update({ name: newName }).ilike("name", oldName);
+    setCategories(prev => prev.map(c => c.toLowerCase() === oldName.toLowerCase() ? newName : c));
+  }, []);
+
+  const deleteCategory = useCallback(async (name: string) => {
+    await supabase.from("categories").delete().ilike("name", name);
+    setCategories(prev => prev.filter(c => c.toLowerCase() !== name.toLowerCase()));
+  }, []);
 
   return (
-    <StoreContext.Provider value={{ stations, setStations, metrics, setMetrics, categories, setCategories }}>
+    <StoreContext.Provider value={{
+      stations, setStations,
+      metrics, setMetrics,
+      categories, setCategories,
+      loading,
+      saveStation, deleteStation,
+      saveMetric, deleteMetric,
+      addCategory, renameCategory, deleteCategory,
+    }}>
       {children}
     </StoreContext.Provider>
   );

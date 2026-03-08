@@ -16,7 +16,7 @@ const recentAthletes = [
 
 export default function Dashboard() {
   const router = useRouter();
-  const { stations } = useStore();
+  const { stations, loading } = useStore();
   const [search, setSearch] = useState("");
 
   const filteredAthletes = recentAthletes.filter((a) =>
