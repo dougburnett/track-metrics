@@ -35,30 +35,48 @@ function StationContent() {
   const completed = Object.keys(results).length;
   const total = athletes.length;
 
-  // Load baseline (most recent previous result per athlete for this metric)
+  // Load today's results and baselines (pre-today) for this metric
   useEffect(() => {
     if (!station?.metricId) return;
     const supabase = createClient();
 
-    async function loadBaselines() {
+    async function loadData() {
+      // Get start of today in ISO format
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
       const { data } = await supabase
         .from("results")
-        .select("athlete_id, value")
+        .select("athlete_id, value, recorded_at")
         .eq("metric_id", station!.metricId)
         .order("recorded_at", { ascending: false });
 
       if (data) {
+        const todayResults: Record<string, string> = {};
         const prev: Record<string, number> = {};
-        data.forEach((r: { athlete_id: string; value: number }) => {
-          if (!(r.athlete_id in prev)) {
-            prev[r.athlete_id] = Number(r.value);
+
+        data.forEach((r: { athlete_id: string; value: number; recorded_at: string }) => {
+          const isToday = r.recorded_at >= todayISO;
+          if (isToday) {
+            // Most recent today result per athlete (first seen since sorted desc)
+            if (!(r.athlete_id in todayResults)) {
+              todayResults[r.athlete_id] = String(r.value);
+            }
+          } else {
+            // Most recent pre-today result per athlete (baseline)
+            if (!(r.athlete_id in prev)) {
+              prev[r.athlete_id] = Number(r.value);
+            }
           }
         });
+
+        setResults(todayResults);
         setBaselines(prev);
       }
     }
 
-    loadBaselines();
+    loadData();
   }, [station?.metricId]);
 
   useEffect(() => {
