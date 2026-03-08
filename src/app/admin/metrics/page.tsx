@@ -2,13 +2,28 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Pencil, Trash2, X, Check, LayoutGrid } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, X, Check, LayoutGrid, Users, Send } from "lucide-react";
 import { useStore, AVAILABLE_ICONS, type Metric, type MetricInput, type Station } from "@/lib/store";
 import { indexToVar } from "@/lib/formula";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, type UserRole } from "@/lib/auth-context";
 import { DynamicIcon } from "@/components/DynamicIcon";
+import { createClient } from "@/lib/supabase";
 
-type View = "list" | "editMetric" | "categories" | "units" | "stations" | "editStation";
+type View = "list" | "editMetric" | "categories" | "units" | "stations" | "editStation" | "team";
+
+interface Profile {
+  id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+}
+
+interface Invite {
+  id: string;
+  email: string;
+  role: UserRole;
+  created_at: string;
+}
 
 export default function AdminMetricsPage() {
   const router = useRouter();
@@ -119,6 +134,59 @@ export default function AdminMetricsPage() {
       await renameUnit(units[renamingUnitIdx], t);
     }
     setRenamingUnitIdx(null); setRenameUnitValue("");
+  };
+
+  // --- Team state ---
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<UserRole>("athlete");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState("");
+  const [pendingInvites, setPendingInvites] = useState<Invite[]>([]);
+  const [members, setMembers] = useState<Profile[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+
+  const loadTeamData = async () => {
+    setTeamLoading(true);
+    const supabase = createClient();
+    const [invitesRes, membersRes] = await Promise.all([
+      supabase.from("invites").select("*").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("*").order("full_name"),
+    ]);
+    setPendingInvites(invitesRes.data ?? []);
+    setMembers(membersRes.data ?? []);
+    setTeamLoading(false);
+  };
+
+  const handleSendInvite = async () => {
+    if (!inviteEmail.trim() || inviteSending) return;
+    setInviteSending(true);
+    setInviteMsg("");
+    const res = await fetch("/api/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      setInviteMsg(data.error);
+    } else {
+      setInviteMsg("Invite sent!");
+      setInviteEmail("");
+      await loadTeamData();
+    }
+    setInviteSending(false);
+  };
+
+  const handleDeleteInvite = async (id: string) => {
+    const supabase = createClient();
+    await supabase.from("invites").delete().eq("id", id);
+    setPendingInvites((prev) => prev.filter((i) => i.id !== id));
+  };
+
+  const handleChangeRole = async (profileId: string, newRole: UserRole) => {
+    const supabase = createClient();
+    await supabase.from("profiles").update({ role: newRole }).eq("id", profileId);
+    setMembers((prev) => prev.map((m) => m.id === profileId ? { ...m, role: newRole } : m));
   };
 
   const inputCls = "h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)]";
@@ -477,6 +545,118 @@ export default function AdminMetricsPage() {
     );
   }
 
+  // ===================== TEAM VIEW =====================
+  if (view === "team") {
+    return (
+      <div className="flex flex-col h-full bg-[var(--background)]">
+        <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
+            <h1 className="font-headline text-lg text-[var(--foreground)]">Team</h1>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto p-4 flex flex-col gap-6">
+          {/* Invite form */}
+          <div className="flex flex-col gap-2">
+            <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+              Invite New Member
+            </h2>
+            <div className="flex gap-2">
+              <input
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
+                placeholder="email@example.com"
+                type="email"
+                className={inputCls + " flex-1 min-w-0"}
+              />
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value as UserRole)}
+                className={inputCls + " appearance-none cursor-pointer w-32"}
+              >
+                <option value="athlete">Athlete</option>
+                <option value="admin">Admin</option>
+                <option value="super_admin">Super Admin</option>
+              </select>
+              <button
+                onClick={handleSendInvite}
+                disabled={inviteSending}
+                className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                <Send size={14} />
+                {inviteSending ? "Sending..." : "Send"}
+              </button>
+            </div>
+            {inviteMsg && (
+              <p className="font-secondary text-xs text-[var(--muted-foreground)]">{inviteMsg}</p>
+            )}
+          </div>
+
+          {/* Pending invites */}
+          {pendingInvites.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+                Pending Invites ({pendingInvites.length})
+              </h2>
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-m)]">
+                {pendingInvites.map((invite) => (
+                  <div key={invite.id} className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-secondary text-sm text-[var(--foreground)] truncate">{invite.email}</div>
+                      <div className="font-secondary text-xs text-[var(--muted-foreground)]">
+                        {invite.role === "super_admin" ? "Super Admin" : invite.role === "admin" ? "Admin" : "Athlete"}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteInvite(invite.id)}
+                      className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors"
+                    >
+                      <Trash2 size={14} className="text-[var(--destructive)]" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Current members */}
+          <div className="flex flex-col gap-2">
+            <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+              Current Members ({members.length})
+            </h2>
+            {teamLoading ? (
+              <p className="font-secondary text-sm text-[var(--muted-foreground)]">Loading...</p>
+            ) : (
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-m)]">
+                {members.map((member) => (
+                  <div key={member.id} className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-secondary text-sm font-medium text-[var(--foreground)] truncate">
+                        {member.full_name || member.email}
+                      </div>
+                      <div className="font-secondary text-xs text-[var(--muted-foreground)] truncate">{member.email}</div>
+                    </div>
+                    <select
+                      value={member.role}
+                      onChange={(e) => handleChangeRole(member.id, e.target.value as UserRole)}
+                      className="h-8 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-3 font-secondary text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)] appearance-none cursor-pointer"
+                    >
+                      <option value="athlete">Athlete</option>
+                      <option value="admin">Admin</option>
+                      <option value="super_admin">Super Admin</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ===================== METRIC LIST VIEW =====================
   return (
     <div className="flex flex-col h-full bg-[var(--background)]">
@@ -488,6 +668,9 @@ export default function AdminMetricsPage() {
         <div className="flex items-center gap-2">
           <button onClick={() => setView("stations")} className="flex items-center gap-1.5 h-10 px-3 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer" title="Edit Stations">
             <LayoutGrid size={16} /> Stations
+          </button>
+          <button onClick={() => { setView("team"); loadTeamData(); }} className="flex items-center gap-1.5 h-10 px-3 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer" title="Team">
+            <Users size={16} /> Team
           </button>
           <button onClick={handleNewMetric} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
             <Plus size={18} /> Add

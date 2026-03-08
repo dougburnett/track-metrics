@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Search, Settings, LogOut } from "lucide-react";
+import { Search, Settings, User } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
@@ -10,7 +10,7 @@ import { DynamicIcon } from "@/components/DynamicIcon";
 export default function Dashboard() {
   const router = useRouter();
   const { stations, metrics, athletes, loading } = useStore();
-  const { role, signOut } = useAuth();
+  const { role } = useAuth();
   const [search, setSearch] = useState("");
   const [genderTab, setGenderTab] = useState<"M" | "F">("M");
 
@@ -57,8 +57,8 @@ export default function Dashboard() {
               <Settings size={20} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" />
             </button>
           )}
-          <button onClick={async () => { await signOut(); router.push("/login"); router.refresh(); }} className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center cursor-pointer" title="Sign out">
-            <LogOut size={16} className="text-[var(--primary-foreground)]" />
+          <button onClick={() => router.push("/profile")} className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center cursor-pointer" title="Profile">
+            <User size={16} className="text-[var(--primary-foreground)]" />
           </button>
         </div>
       </div>

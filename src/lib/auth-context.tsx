@@ -11,6 +11,7 @@ interface AuthContextType {
   role: UserRole | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  refreshRole: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -66,8 +67,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const refreshRole = async () => {
+    if (!user) return;
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    setRole((data?.role as UserRole) ?? "athlete");
+  };
+
   return (
-    <AuthContext.Provider value={{ user, role, loading, signOut }}>
+    <AuthContext.Provider value={{ user, role, loading, signOut, refreshRole }}>
       {children}
     </AuthContext.Provider>
   );
