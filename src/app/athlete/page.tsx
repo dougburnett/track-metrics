@@ -268,12 +268,12 @@ function AthleteContent() {
                     const maxSlots = 20;
                     const slotCount = Math.max(minSlots, Math.min(maxSlots, s.history.length));
                     const slots: ({ value: number; date: string } | null)[] = [];
-                    // Pad with empty slots at the start if fewer than minSlots
+                    // Add actual data first (left to right, oldest to newest)
+                    s.history.slice(-maxSlots).forEach((h) => slots.push(h));
+                    // Pad with empty slots at the end if fewer than minSlots
                     for (let i = 0; i < slotCount - s.history.length; i++) {
                       slots.push(null);
                     }
-                    // Add actual data (already chronological)
-                    s.history.slice(-maxSlots).forEach((h) => slots.push(h));
 
                     return (
                       <div
@@ -288,11 +288,11 @@ function AthleteContent() {
                             {s.acronym}
                           </span>
                         </div>
-                        <div className="flex items-end gap-[2px] sm:gap-1 h-32">
+                        <div className="flex items-end gap-1.5 sm:gap-2 h-32">
                           {slots.map((slot, i) => (
                             <div
                               key={i}
-                              className="flex-1 min-w-[12px] max-w-[32px] flex flex-col items-center justify-end h-full"
+                              className="flex-1 flex flex-col items-center justify-end h-full"
                             >
                               {slot ? (
                                 <>
@@ -314,11 +314,11 @@ function AthleteContent() {
                           ))}
                         </div>
                         {/* Date labels */}
-                        <div className="flex gap-[2px] sm:gap-1 mt-1">
+                        <div className="flex gap-1.5 sm:gap-2 mt-1">
                           {slots.map((slot, i) => (
                             <div
                               key={i}
-                              className="flex-1 min-w-[12px] max-w-[32px] text-center"
+                              className="flex-1 text-center"
                             >
                               <span className="font-secondary text-[8px] sm:text-[9px] text-[var(--muted-foreground)] leading-none">
                                 {slot?.date?.replace(/\s/, "\n") || ""}
