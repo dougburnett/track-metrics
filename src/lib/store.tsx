@@ -96,7 +96,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         supabase.from("categories").select("*").order("name"),
         supabase.from("stations").select("*").order("sort_order"),
         supabase.from("metrics").select("*"),
-        supabase.from("athletes").select("*").order("last_name"),
+        supabase.from("athletes").select("*").order("first_name"),
       ]);
 
       if (catRes.error) console.error("categories error:", catRes.error);
