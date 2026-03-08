@@ -38,7 +38,7 @@ export default function Dashboard() {
               <Settings size={20} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" />
             </button>
           )}
-          <button onClick={signOut} className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center cursor-pointer" title="Sign out">
+          <button onClick={async () => { await signOut(); router.push("/login"); router.refresh(); }} className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center cursor-pointer" title="Sign out">
             <LogOut size={16} className="text-[var(--primary-foreground)]" />
           </button>
         </div>
