@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Info, Search, Check, Pencil, Undo2, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
+import { createClient } from "@/lib/supabase";
 
 function StationContent() {
   const router = useRouter();
@@ -43,8 +44,19 @@ function StationContent() {
     setValue("");
   };
 
-  const handleSave = () => {
-    if (selectedId && value) {
+  const handleSave = async () => {
+    if (selectedId && value && station) {
+      const supabase = createClient();
+      const metricId = station.metricId;
+      if (metricId) {
+        await supabase.from("results").insert({
+          athlete_id: selectedId,
+          metric_id: metricId,
+          station_id: undefined,
+          value: parseFloat(value),
+          unit: assignedMetric?.acronym || "",
+        });
+      }
       setResults((prev) => ({ ...prev, [selectedId]: value }));
       setSelectedId(null);
       setValue("");
