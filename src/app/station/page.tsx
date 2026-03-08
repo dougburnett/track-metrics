@@ -172,7 +172,7 @@ function StationContent() {
   }, [results, athletes, baselines]);
 
   return (
-    <div className="flex flex-col h-full bg-[var(--background)]">
+    <div className="flex flex-col h-full bg-[var(--background)] overflow-x-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
         <button onClick={() => router.push("/")} className="cursor-pointer">
@@ -220,7 +220,7 @@ function StationContent() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2 h-16 rounded-[var(--radius-m)] bg-[var(--background)] border-2 border-[var(--primary)] px-5">
+          <div className="flex items-center gap-2 h-16 rounded-[var(--radius-m)] bg-[var(--background)] border-2 border-[var(--primary)] px-5 overflow-hidden">
             <input
               ref={inputRef}
               type="number"
@@ -228,9 +228,9 @@ function StationContent() {
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder="0.00"
-              className="flex-1 bg-transparent font-primary text-3xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="flex-1 min-w-0 bg-transparent font-primary text-3xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
-            <span className="font-secondary text-sm text-[var(--muted-foreground)]">
+            <span className="font-secondary text-sm text-[var(--muted-foreground)] shrink-0">
               {assignedMetric?.acronym || stationId.toUpperCase()}
             </span>
           </div>
