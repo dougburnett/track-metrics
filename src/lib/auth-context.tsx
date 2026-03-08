@@ -23,16 +23,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const supabase = createClient();
 
+    async function loadRole(userId: string) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .maybeSingle();
+      setRole((data?.role as UserRole) ?? "athlete");
+    }
+
+    // Use getSession() for instant local read (no network call)
     async function loadUser() {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user ?? null);
-      if (user) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .maybeSingle();
-        setRole((data?.role as UserRole) ?? "athlete");
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        await loadRole(currentUser.id);
       }
       setLoading(false);
     }
@@ -43,15 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", currentUser.id)
-          .maybeSingle();
-        setRole((data?.role as UserRole) ?? "athlete");
+        await loadRole(currentUser.id);
       } else {
         setRole(null);
       }
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -59,9 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     const supabase = createClient();
-    await supabase.auth.signOut();
     setUser(null);
     setRole(null);
+    await supabase.auth.signOut();
   };
 
   return (

@@ -74,17 +74,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const loaded = useRef(false);
+  const loadedForUser = useRef<string | null>(null);
 
   // Load from Supabase once auth is ready and user exists
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
+      loadedForUser.current = null;
+      setStations([]);
+      setMetrics([]);
+      setAthletes([]);
+      setCategories([]);
       setLoading(false);
       return;
     }
-    if (loaded.current) return;
-    loaded.current = true;
+    if (loadedForUser.current === user.id) return;
+    loadedForUser.current = user.id;
 
     async function load() {
       const [catRes, staRes, metRes, athRes] = await Promise.all([
