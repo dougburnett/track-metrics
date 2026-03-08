@@ -1,65 +1,118 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useRouter } from "next/navigation";
+import { Search, User, Settings } from "lucide-react";
+import { useState } from "react";
+import { useStore } from "@/lib/store";
+import { DynamicIcon } from "@/components/DynamicIcon";
+
+const recentAthletes = [
+  { id: 1, name: "Alex Smith", initials: "AS", lastMetric: "RSI", value: "2.31" },
+  { id: 2, name: "Maria Rodriguez", initials: "MR", lastMetric: "Sprint 40m", value: "5.12s" },
+  { id: 3, name: "Jordan Davis", initials: "JD", lastMetric: "Vertical", value: '32"' },
+  { id: 4, name: "Tyler Washington", initials: "TW", lastMetric: "Balance", value: "45s" },
+  { id: 5, name: "Sarah Johnson", initials: "SJ", lastMetric: "RSI", value: "1.98" },
+];
+
+export default function Dashboard() {
+  const router = useRouter();
+  const { stations } = useStore();
+  const [search, setSearch] = useState("");
+
+  const filteredAthletes = recentAthletes.filter((a) =>
+    a.name.toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex flex-col h-full bg-[var(--background)]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
+        <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
+          Track Metrics
+        </h1>
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.push("/admin/metrics")} className="cursor-pointer" title="Settings">
+            <Settings size={20} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" />
+          </button>
+          <div className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center">
+            <User size={18} className="text-[var(--primary-foreground)]" />
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {/* Search */}
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-pill)] px-4 h-10">
+            <Search size={16} className="text-[var(--muted-foreground)]" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search athletes..."
+              className="flex-1 bg-transparent font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
         </div>
-      </main>
+
+        {/* Station Selector */}
+        <div className="px-4 pb-4">
+          <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
+            Stations
+          </h2>
+          <div className="grid grid-cols-2 gap-3">
+            {stations.map((station) => (
+              <button
+                key={station.id}
+                onClick={() => router.push(`/station?id=${station.id}`)}
+                className="flex flex-col gap-2 p-4 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
+              >
+                <DynamicIcon name={station.icon} size={20} className="text-[var(--primary)]" />
+                <div>
+                  <div className="font-primary text-sm font-semibold text-[var(--foreground)]">
+                    {station.name}
+                  </div>
+                  <div className="font-secondary text-xs text-[var(--muted-foreground)]">
+                    {station.description}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent Athletes */}
+        <div className="px-4 pb-6">
+          <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
+            Recent Athletes
+          </h2>
+          <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+            {filteredAthletes.map((athlete) => (
+              <button
+                key={athlete.id}
+                onClick={() => router.push(`/athlete?id=${athlete.id}`)}
+                className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--secondary)] transition-colors cursor-pointer text-left"
+              >
+                <div className="w-9 h-9 rounded-full bg-[var(--secondary)] flex items-center justify-center shrink-0">
+                  <span className="font-primary text-xs font-semibold text-[var(--secondary-foreground)]">
+                    {athlete.initials}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-secondary text-sm font-medium text-[var(--foreground)]">
+                    {athlete.name}
+                  </div>
+                  <div className="font-secondary text-xs text-[var(--muted-foreground)]">
+                    {athlete.lastMetric}
+                  </div>
+                </div>
+                <span className="font-primary text-sm font-semibold text-[var(--foreground)]">
+                  {athlete.value}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
