@@ -94,6 +94,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         supabase.from("athletes").select("*").order("last_name"),
       ]);
 
+      if (catRes.error) console.error("categories error:", catRes.error);
+      if (staRes.error) console.error("stations error:", staRes.error);
+      if (metRes.error) console.error("metrics error:", metRes.error);
+      if (athRes.error) console.error("athletes error:", athRes.error);
+
       const cats = catRes.data || [];
       const stas = staRes.data || [];
       const mets = metRes.data || [];
