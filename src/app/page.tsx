@@ -64,28 +64,28 @@ export default function Dashboard() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {/* Station Selector - Compressed */}
-        <div className="px-4 pt-3 pb-2">
+        {/* Station Selector */}
+        <div className="px-4 pt-3 pb-3">
           <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
             Stations
           </h2>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2.5">
             {stations.map((station) => {
               const assignedMetric = metrics.find((m) => m.id === station.metricId);
               return (
                 <button
                   key={station.id}
                   onClick={() => router.push(`/station?id=${station.id}`)}
-                  className="flex items-center gap-2.5 p-2.5 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
+                  className="flex items-center gap-3 p-3 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
                 >
-                  <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
-                    <DynamicIcon name={station.icon} size={14} className="text-[var(--primary-foreground)]" />
+                  <div className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+                    <DynamicIcon name={station.icon} size={16} className="text-[var(--primary-foreground)]" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="font-headline text-xs text-[var(--foreground)] truncate">
+                    <div className="font-headline text-sm text-[var(--foreground)] truncate">
                       {station.name}
                     </div>
-                    <div className="font-secondary text-[10px] text-[var(--muted-foreground)] truncate">
+                    <div className="font-secondary text-xs text-[var(--muted-foreground)] truncate">
                       {assignedMetric ? assignedMetric.name : station.description}
                     </div>
                   </div>

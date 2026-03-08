@@ -297,72 +297,62 @@ function StationContent() {
 
       {/* Entry Section */}
       {canRecord && selectedAthlete && (
-        <div className="flex flex-col gap-4 p-5 bg-[var(--card)] border-b border-[var(--border)]">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full bg-[var(--secondary)] flex items-center justify-center">
-              <span className="font-mono text-base font-semibold text-[var(--secondary-foreground)]">
-                {selectedAthlete.firstName[0]}{selectedAthlete.lastName[0]}
-              </span>
-            </div>
-            <div className="flex-1">
-              <div className="font-primary text-base font-semibold text-[var(--foreground)]">
-                {selectedAthlete.firstName} {selectedAthlete.lastName}
-              </div>
-              <div className="font-secondary text-xs text-[var(--muted-foreground)]">
-                Grade {selectedAthlete.grade} · {selectedAthlete.gender === "M" ? "Male" : "Female"}
-              </div>
-            </div>
+        <div className="flex flex-col items-center gap-4 px-5 py-5 bg-[var(--card)] border-b border-[var(--border)]">
+          {/* Compact athlete info */}
+          <div className="flex items-center justify-between w-full">
+            <span className="font-secondary text-sm text-[var(--foreground)]">
+              {selectedAthlete.firstName} {selectedAthlete.lastName}
+              <span className="text-[var(--muted-foreground)]"> · Gr {selectedAthlete.grade}</span>
+            </span>
             <button onClick={handleUndo} className="cursor-pointer">
-              <Undo2 size={20} className="text-[var(--muted-foreground)]" />
+              <Undo2 size={18} className="text-[var(--muted-foreground)]" />
             </button>
           </div>
 
           {isMultiInput ? (
             <>
-              <div className="flex flex-col gap-2">
+              <div className="w-full max-w-[320px] flex flex-col gap-2">
                 {assignedMetric!.inputs!.map((inp, i) => {
                   const key = indexToVar(i);
                   return (
                     <div key={key} className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-[var(--primary)] w-16 shrink-0 truncate">
+                      <span className="font-mono text-xs font-bold text-[var(--primary)] w-14 shrink-0 truncate">
                         {inp.label || key}
                       </span>
-                      <div className="flex-1 flex items-center gap-2 h-12 rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] px-4 overflow-hidden">
-                        <input
-                          ref={i === 0 ? inputRef : undefined}
-                          type="number"
-                          step="0.01"
-                          value={subValues[key] || ""}
-                          onChange={(e) => setSubValues(prev => ({ ...prev, [key]: e.target.value }))}
-                          placeholder="0.00"
-                          className="flex-1 min-w-0 bg-transparent font-mono text-lg font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                      </div>
+                      <input
+                        ref={i === 0 ? inputRef : undefined}
+                        type="text"
+                        inputMode="decimal"
+                        value={subValues[key] || ""}
+                        onChange={(e) => setSubValues(prev => ({ ...prev, [key]: e.target.value }))}
+                        placeholder="0.00"
+                        className="flex-1 min-w-0 h-12 rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] px-4 font-mono text-lg font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none text-center"
+                      />
                     </div>
                   );
                 })}
               </div>
-              <div className="flex items-center justify-between px-4 py-3 bg-[var(--secondary)] rounded-[var(--radius-m)]">
+              <div className="flex items-center gap-2">
                 <span className="font-secondary text-sm text-[var(--muted-foreground)]">
-                  Result {assignedMetric?.formula ? `(${assignedMetric.formula})` : "(sum)"}
+                  {assignedMetric?.formula ? `(${assignedMetric.formula})` : "="}
                 </span>
-                <span className="font-mono text-2xl font-bold text-[var(--foreground)]">
+                <span className="font-mono text-3xl font-bold text-[var(--foreground)]">
                   {computedResult !== null ? (Number.isInteger(computedResult) ? computedResult : computedResult.toFixed(2)) : "—"}
                 </span>
               </div>
             </>
           ) : (
-            <div className="flex items-center gap-2 h-16 rounded-[var(--radius-m)] bg-[var(--background)] border-2 border-[var(--primary)] px-5 overflow-hidden">
+            <div className="flex flex-col items-center py-2">
               <input
                 ref={inputRef}
-                type="number"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 placeholder="0.00"
-                className="flex-1 min-w-0 bg-transparent font-mono text-3xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-full max-w-[240px] bg-transparent font-mono text-5xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none text-center border-b-2 border-[var(--primary)] pb-2"
               />
-              <span className="font-secondary text-sm text-[var(--muted-foreground)] shrink-0">
+              <span className="font-secondary text-sm text-[var(--muted-foreground)] mt-2">
                 {assignedMetric?.acronym || stationId.toUpperCase()}
               </span>
             </div>
@@ -371,7 +361,7 @@ function StationContent() {
           <button
             onClick={handleSave}
             disabled={isMultiInput ? computedResult === null : !value}
-            className="h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-base font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full max-w-[280px] h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-base font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Save Result
           </button>
