@@ -112,7 +112,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Resolve metric_id: if metricId is set, use it directly (it's already a UUID)
     const metricId = station.metricId || null;
 
-    const { data: existing } = await supabase.from("stations").select("id").eq("slug", slug).single();
+    const { data: existing } = await supabase.from("stations").select("id").eq("slug", slug).maybeSingle();
     if (existing) {
       await supabase.from("stations").update({
         name: station.name,
@@ -155,7 +155,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .from("categories")
       .select("id")
       .ilike("name", metric.category)
-      .single();
+      .maybeSingle();
 
     const row = {
       name: metric.name,
@@ -173,7 +173,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       await supabase.from("metrics").update(row).eq("id", metric.id);
       setMetrics(prev => prev.map(m => m.id === metric.id ? metric : m));
     } else {
-      const { data } = await supabase.from("metrics").insert(row).select("id").single();
+      const { data } = await supabase.from("metrics").insert(row).select("id").maybeSingle();
       const newMetric = { ...metric, id: data?.id || metric.id };
       setMetrics(prev => {
         const idx = prev.findIndex(m => m.id === metric.id);

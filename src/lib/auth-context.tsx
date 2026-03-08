@@ -31,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .from("profiles")
           .select("role")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
         setRole((data?.role as UserRole) ?? "athlete");
       }
       setLoading(false);
@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .from("profiles")
           .select("role")
           .eq("id", currentUser.id)
-          .single();
+          .maybeSingle();
         setRole((data?.role as UserRole) ?? "athlete");
       } else {
         setRole(null);
