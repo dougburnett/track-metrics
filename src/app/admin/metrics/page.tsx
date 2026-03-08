@@ -3,20 +3,22 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, Trash2, X, Check, LayoutGrid } from "lucide-react";
-import { useStore, AVAILABLE_ICONS, type Metric, type Station } from "@/lib/store";
+import { useStore, AVAILABLE_ICONS, type Metric, type MetricInput, type Station } from "@/lib/store";
+import { indexToVar } from "@/lib/formula";
 import { useAuth } from "@/lib/auth-context";
 import { DynamicIcon } from "@/components/DynamicIcon";
 
-type View = "list" | "editMetric" | "categories" | "stations" | "editStation";
+type View = "list" | "editMetric" | "categories" | "units" | "stations" | "editStation";
 
 export default function AdminMetricsPage() {
   const router = useRouter();
   const { role, loading: authLoading } = useAuth();
   const {
-    stations, metrics, categories, loading,
+    stations, metrics, categories, units, loading,
     saveStation, deleteStation: removeStation,
     saveMetric, deleteMetric: removeMetric,
     addCategory, renameCategory, deleteCategory,
+    addUnit, renameUnit, deleteUnit,
   } = useStore();
 
   useEffect(() => {
@@ -29,9 +31,9 @@ export default function AdminMetricsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Metric form (no more station field)
-  const [form, setForm] = useState<Metric>({ id: "", name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "" });
-  const updateForm = (field: keyof Metric, value: string) => setForm((prev) => ({ ...prev, [field]: value }));
+  // Metric form
+  const [form, setForm] = useState<Metric>({ id: "", name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "", lowerIsBetter: false, minValue: null, maxValue: null, unit: "", inputs: null, formula: "" });
+  const updateForm = (field: keyof Metric, value: string | boolean | number | null | MetricInput[]) => setForm((prev) => ({ ...prev, [field]: value }));
 
   // Station form (now has location + metricId)
   const [stationForm, setStationForm] = useState<Station>({ id: "", name: "", icon: "zap", description: "", location: "", metricId: "" });
@@ -42,9 +44,14 @@ export default function AdminMetricsPage() {
   const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
+  // Unit editing
+  const [newUnit, setNewUnit] = useState("");
+  const [renamingUnitIdx, setRenamingUnitIdx] = useState<number | null>(null);
+  const [renameUnitValue, setRenameUnitValue] = useState("");
+
   // --- Metric handlers ---
   const handleEditMetric = (metric: Metric) => { setEditingId(metric.id); setForm({ ...metric }); setView("editMetric"); };
-  const handleNewMetric = () => { setForm({ id: `metric-${Date.now()}`, name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "" }); setEditingId(null); setView("editMetric"); };
+  const handleNewMetric = () => { setForm({ id: `metric-${Date.now()}`, name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "", lowerIsBetter: false, minValue: null, maxValue: null, unit: "", inputs: null, formula: "" }); setEditingId(null); setView("editMetric"); };
   const handleSaveMetric = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || saving) return;
@@ -91,6 +98,27 @@ export default function AdminMetricsPage() {
       await renameCategory(categories[renamingIdx], t);
     }
     setRenamingIdx(null); setRenameValue("");
+  };
+
+  // --- Unit handlers ---
+  const handleAddUnit = async () => {
+    const t = newUnit.trim();
+    if (t && !units.some((u) => u.toLowerCase() === t.toLowerCase())) {
+      await addUnit(t);
+      setNewUnit("");
+    }
+  };
+  const handleDeleteUnit = async (idx: number) => {
+    await deleteUnit(units[idx]);
+  };
+  const handleStartRenameUnit = (idx: number) => { setRenamingUnitIdx(idx); setRenameUnitValue(units[idx]); };
+  const handleConfirmRenameUnit = async () => {
+    if (renamingUnitIdx === null) return;
+    const t = renameUnitValue.trim();
+    if (t) {
+      await renameUnit(units[renamingUnitIdx], t);
+    }
+    setRenamingUnitIdx(null); setRenameUnitValue("");
   };
 
   const inputCls = "h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)]";
@@ -255,6 +283,41 @@ export default function AdminMetricsPage() {
     );
   }
 
+  // ===================== UNITS VIEW =====================
+  if (view === "units") {
+    return (
+      <div className="flex flex-col h-full bg-[var(--background)]">
+        <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
+          <button onClick={() => { setView("editMetric"); setRenamingUnitIdx(null); }} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
+          <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">Edit Units</h1>
+        </div>
+        <div className="flex-1 overflow-auto">
+          {units.map((u, idx) => (
+            <div key={idx} className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] bg-[var(--card)]">
+              {renamingUnitIdx === idx ? (
+                <>
+                  <input value={renameUnitValue} onChange={(e) => setRenameUnitValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleConfirmRenameUnit()} autoFocus className={"flex-1 " + inputCls} />
+                  <button onClick={handleConfirmRenameUnit} className="p-2 cursor-pointer hover:bg-[var(--color-success)] rounded-[var(--radius-pill)] transition-colors"><Check size={16} className="text-[var(--color-success-foreground)]" /></button>
+                  <button onClick={() => { setRenamingUnitIdx(null); setRenameUnitValue(""); }} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors"><X size={16} className="text-[var(--muted-foreground)]" /></button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 font-secondary text-sm font-medium text-[var(--foreground)]">{u}</span>
+                  <button onClick={() => handleStartRenameUnit(idx)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors"><Pencil size={16} className="text-[var(--muted-foreground)]" /></button>
+                  <button onClick={() => handleDeleteUnit(idx)} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors"><Trash2 size={16} className="text-[var(--destructive)]" /></button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 p-4 border-t border-[var(--border)]">
+          <input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddUnit()} placeholder="New unit name..." className={"flex-1 " + inputCls} />
+          <button onClick={handleAddUnit} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-primary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer"><Plus size={18} /> Add</button>
+        </div>
+      </div>
+    );
+  }
+
   // ===================== EDIT METRIC VIEW =====================
   if (view === "editMetric") {
     return (
@@ -265,7 +328,7 @@ export default function AdminMetricsPage() {
             {editingId ? "Edit Metric" : "New Metric"}
           </h1>
         </div>
-        <form onSubmit={handleSaveMetric} className="flex-1 overflow-auto p-4 flex flex-col gap-4">
+        <form onSubmit={handleSaveMetric} className="flex-1 overflow-auto overflow-x-hidden p-4 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Metric Name</label>
             <input value={form.name} onChange={(e) => updateForm("name", e.target.value)} placeholder="e.g. Reactive Strength Index" className={inputCls} />
@@ -303,6 +366,106 @@ export default function AdminMetricsPage() {
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Drill Suggestions</label>
             <input value={form.drills} onChange={(e) => updateForm("drills", e.target.value)} placeholder="e.g. Depth jumps, Pogo hops" className={inputCls} />
           </div>
+
+          {/* Multi-Input Configuration */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Value Inputs</label>
+              <button
+                type="button"
+                onClick={() => {
+                  const current = form.inputs || [];
+                  updateForm("inputs", [...current, { label: "" }]);
+                }}
+                className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer"
+              >+ Add input</button>
+            </div>
+            {!form.inputs || form.inputs.length === 0 ? (
+              <p className="font-secondary text-xs text-[var(--muted-foreground)]">Single value input (default). Add inputs for multi-value metrics.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {form.inputs.map((inp, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="font-primary text-sm font-bold text-[var(--primary)] w-6 text-center shrink-0">{indexToVar(i)}</span>
+                    <input
+                      value={inp.label}
+                      onChange={(e) => {
+                        const next = [...form.inputs!];
+                        next[i] = { ...next[i], label: e.target.value };
+                        updateForm("inputs", next);
+                      }}
+                      placeholder={`Label for input ${indexToVar(i)}`}
+                      className={inputCls + " flex-1 min-w-0"}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = form.inputs!.filter((_, j) => j !== i);
+                        updateForm("inputs", next.length === 0 ? null : next);
+                      }}
+                      className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors shrink-0"
+                    >
+                      <Trash2 size={14} className="text-[var(--destructive)]" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Formula (only when 2+ inputs) */}
+          {form.inputs && form.inputs.length > 1 && (
+            <div className="flex flex-col gap-1.5">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Formula</label>
+              <input
+                value={form.formula}
+                onChange={(e) => updateForm("formula", e.target.value)}
+                placeholder={`e.g. ${form.inputs.map((_, i) => indexToVar(i)).join(" + ")}`}
+                className={inputCls}
+              />
+              <p className="font-secondary text-xs text-[var(--muted-foreground)]">
+                Variables: {form.inputs.map((inp, i) => `${indexToVar(i)} = ${inp.label || `Input ${i + 1}`}`).join(", ")}.
+                Leave empty to use sum of all inputs.
+              </p>
+            </div>
+          )}
+
+          {/* Direction toggle */}
+          <div className="flex items-center justify-between p-3 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-m)]">
+            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Lower is better</label>
+            <button
+              type="button"
+              onClick={() => updateForm("lowerIsBetter", !form.lowerIsBetter)}
+              className={`w-12 h-7 rounded-full transition-colors cursor-pointer ${form.lowerIsBetter ? "bg-[var(--primary)]" : "bg-[var(--input)]"}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform mx-1 ${form.lowerIsBetter ? "translate-x-5" : "translate-x-0"}`} />
+            </button>
+          </div>
+
+          {/* Min / Max values */}
+          <div className="flex gap-3">
+            <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Min Value</label>
+              <input type="number" value={form.minValue ?? ""} onChange={(e) => updateForm("minValue", e.target.value === "" ? null : Number(e.target.value))} placeholder="Optional" className={inputCls + " w-full"} />
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Max Value</label>
+              <input type="number" value={form.maxValue ?? ""} onChange={(e) => updateForm("maxValue", e.target.value === "" ? null : Number(e.target.value))} placeholder="Optional" className={inputCls + " w-full"} />
+            </div>
+          </div>
+
+          {/* Unit selector */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Unit</label>
+              <button type="button" onClick={() => setView("units")} className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer">Edit list</button>
+            </div>
+            <select value={form.unit} onChange={(e) => updateForm("unit", e.target.value)} className={inputCls + " appearance-none cursor-pointer"}>
+              <option value="">None</option>
+              {units.map((u) => (<option key={u} value={u}>{u}</option>))}
+            </select>
+          </div>
+
           <div className="flex gap-3 pt-2 pb-6">
             <button type="button" onClick={() => setView("list")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-primary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">Cancel</button>
             <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-primary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">

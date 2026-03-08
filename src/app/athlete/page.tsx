@@ -15,6 +15,7 @@ interface Result {
   value: number;
   unit: string;
   recordedAt: string;
+  subValues: Record<string, number> | null;
 }
 
 interface MetricSummary {
@@ -48,13 +49,13 @@ function AthleteContent() {
     async function loadResults() {
       const { data } = await supabase
         .from("results")
-        .select("id, metric_id, value, unit, recorded_at")
+        .select("id, metric_id, value, unit, recorded_at, sub_values")
         .eq("athlete_id", athleteId)
         .order("recorded_at", { ascending: false });
 
       if (data) {
         setResults(
-          data.map((r: { id: string; metric_id: string; value: number; unit: string; recorded_at: string }) => {
+          data.map((r: { id: string; metric_id: string; value: number; unit: string; recorded_at: string; sub_values: Record<string, number> | null }) => {
             const metric = metrics.find((m) => m.id === r.metric_id);
             return {
               id: r.id,
@@ -65,6 +66,7 @@ function AthleteContent() {
               value: Number(r.value),
               unit: r.unit,
               recordedAt: r.recorded_at,
+              subValues: r.sub_values || null,
             };
           })
         );
@@ -380,8 +382,13 @@ function AthleteContent() {
                       <span className="flex-1 font-secondary text-sm font-medium text-[var(--foreground)]">
                         {r.metricAcronym}
                       </span>
-                      <span className="w-16 text-right font-primary text-sm font-semibold text-[var(--foreground)]">
+                      <span className="w-20 text-right font-primary text-sm font-semibold text-[var(--foreground)]">
                         {r.value}
+                        {r.subValues && (
+                          <span className="block font-secondary text-[9px] text-[var(--muted-foreground)] font-normal">
+                            {Object.entries(r.subValues).map(([k, v]) => `${k}:${v}`).join(" ")}
+                          </span>
+                        )}
                       </span>
                       <span
                         className={`w-16 text-right font-primary text-xs font-semibold ${

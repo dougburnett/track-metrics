@@ -6,6 +6,7 @@ import { ArrowLeft, Info, Search, Check, Pencil, Undo2, X, TrendingUp, TrendingD
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase";
+import { evaluateFormula, indexToVar } from "@/lib/formula";
 
 const GRADE_LABELS: Record<number, string> = { 9: "Fr", 10: "So", 11: "Jr", 12: "Sr" };
 
@@ -27,10 +28,36 @@ function StationContent() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [value, setValue] = useState("");
+  const [subValues, setSubValues] = useState<Record<string, string>>({});
   const [results, setResults] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [baselines, setBaselines] = useState<Record<string, number>>({});
+
+  const isMultiInput = !!(assignedMetric?.inputs && assignedMetric.inputs.length > 1);
+
+  const computedResult = useMemo(() => {
+    if (!isMultiInput || !assignedMetric?.inputs) return null;
+    const numericValues: Record<string, number> = {};
+    let allFilled = true;
+    assignedMetric.inputs.forEach((_, i) => {
+      const key = indexToVar(i);
+      const raw = subValues[key];
+      if (!raw || raw === "") { allFilled = false; return; }
+      const n = parseFloat(raw);
+      if (isNaN(n)) { allFilled = false; return; }
+      numericValues[key] = n;
+    });
+    if (!allFilled) return null;
+    try {
+      const formula = assignedMetric.formula || assignedMetric.inputs.map((_, i) => indexToVar(i)).join(" + ");
+      const result = evaluateFormula(formula, numericValues);
+      if (!isFinite(result)) return null;
+      return result;
+    } catch {
+      return null;
+    }
+  }, [subValues, assignedMetric, isMultiInput]);
 
   const completed = Object.keys(results).length;
   const total = athletes.length;
@@ -92,18 +119,34 @@ function StationContent() {
   };
 
   const handleSave = async () => {
-    if (selectedId && value && station) {
-      const supabase = createClient();
-      const metricId = station.metricId;
-      if (metricId) {
-        await supabase.from("results").insert({
-          athlete_id: selectedId,
-          metric_id: metricId,
-          station_id: undefined,
-          value: parseFloat(value),
-          unit: assignedMetric?.acronym || "",
-        });
-      }
+    if (!selectedId || !station?.metricId) return;
+    const supabase = createClient();
+    const metricId = station.metricId;
+
+    if (isMultiInput && computedResult !== null) {
+      const numericSubValues: Record<string, number> = {};
+      assignedMetric!.inputs!.forEach((_, i) => {
+        const key = indexToVar(i);
+        numericSubValues[key] = parseFloat(subValues[key]);
+      });
+      await supabase.from("results").insert({
+        athlete_id: selectedId,
+        metric_id: metricId,
+        value: computedResult,
+        unit: assignedMetric?.acronym || "",
+        sub_values: numericSubValues,
+      });
+      const displayVal = Number.isInteger(computedResult) ? String(computedResult) : computedResult.toFixed(2);
+      setResults((prev) => ({ ...prev, [selectedId]: displayVal }));
+      setSelectedId(null);
+      setSubValues({});
+    } else if (value) {
+      await supabase.from("results").insert({
+        athlete_id: selectedId,
+        metric_id: metricId,
+        value: parseFloat(value),
+        unit: assignedMetric?.acronym || "",
+      });
       setResults((prev) => ({ ...prev, [selectedId]: value }));
       setSelectedId(null);
       setValue("");
@@ -113,6 +156,7 @@ function StationContent() {
   const handleUndo = () => {
     setSelectedId(null);
     setValue("");
+    setSubValues({});
   };
 
   const filteredAthletes = athletes.filter((a) => {
@@ -220,24 +264,60 @@ function StationContent() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2 h-16 rounded-[var(--radius-m)] bg-[var(--background)] border-2 border-[var(--primary)] px-5 overflow-hidden">
-            <input
-              ref={inputRef}
-              type="number"
-              step="0.01"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="0.00"
-              className="flex-1 min-w-0 bg-transparent font-primary text-3xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-            <span className="font-secondary text-sm text-[var(--muted-foreground)] shrink-0">
-              {assignedMetric?.acronym || stationId.toUpperCase()}
-            </span>
-          </div>
+          {isMultiInput ? (
+            <>
+              <div className="flex flex-col gap-2">
+                {assignedMetric!.inputs!.map((inp, i) => {
+                  const key = indexToVar(i);
+                  return (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="font-primary text-xs font-bold text-[var(--primary)] w-16 shrink-0 truncate">
+                        {inp.label || key}
+                      </span>
+                      <div className="flex-1 flex items-center gap-2 h-12 rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] px-4 overflow-hidden">
+                        <input
+                          ref={i === 0 ? inputRef : undefined}
+                          type="number"
+                          step="0.01"
+                          value={subValues[key] || ""}
+                          onChange={(e) => setSubValues(prev => ({ ...prev, [key]: e.target.value }))}
+                          placeholder="0.00"
+                          className="flex-1 min-w-0 bg-transparent font-primary text-lg font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between px-4 py-3 bg-[var(--secondary)] rounded-[var(--radius-m)]">
+                <span className="font-secondary text-sm text-[var(--muted-foreground)]">
+                  Result {assignedMetric?.formula ? `(${assignedMetric.formula})` : "(sum)"}
+                </span>
+                <span className="font-primary text-2xl font-bold text-[var(--foreground)]">
+                  {computedResult !== null ? (Number.isInteger(computedResult) ? computedResult : computedResult.toFixed(2)) : "—"}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 h-16 rounded-[var(--radius-m)] bg-[var(--background)] border-2 border-[var(--primary)] px-5 overflow-hidden">
+              <input
+                ref={inputRef}
+                type="number"
+                step="0.01"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="0.00"
+                className="flex-1 min-w-0 bg-transparent font-primary text-3xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="font-secondary text-sm text-[var(--muted-foreground)] shrink-0">
+                {assignedMetric?.acronym || stationId.toUpperCase()}
+              </span>
+            </div>
+          )}
 
           <button
             onClick={handleSave}
-            disabled={!value}
+            disabled={isMultiInput ? computedResult === null : !value}
             className="h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-primary text-base font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Save Result

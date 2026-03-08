@@ -16,6 +16,10 @@ export interface Station {
   metricId: string; // uuid of assigned metric
 }
 
+export interface MetricInput {
+  label: string;
+}
+
 export interface Metric {
   id: string;
   name: string;
@@ -25,6 +29,12 @@ export interface Metric {
   measurementRules: string;
   gear: string;
   drills: string;
+  lowerIsBetter: boolean;
+  minValue: number | null;
+  maxValue: number | null;
+  unit: string;
+  inputs: MetricInput[] | null;
+  formula: string;
 }
 
 export interface Athlete {
@@ -52,6 +62,7 @@ interface StoreContextType {
   metrics: Metric[];
   setMetrics: React.Dispatch<React.SetStateAction<Metric[]>>;
   athletes: Athlete[];
+  units: string[];
   categories: string[];
   setCategories: React.Dispatch<React.SetStateAction<string[]>>;
   loading: boolean;
@@ -62,6 +73,9 @@ interface StoreContextType {
   addCategory: (name: string) => Promise<void>;
   renameCategory: (oldName: string, newName: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
+  addUnit: (name: string) => Promise<void>;
+  renameUnit: (oldName: string, newName: string) => Promise<void>;
+  deleteUnit: (name: string) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -72,6 +86,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [stations, setStations] = useState<Station[]>([]);
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const [units, setUnits] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const loadedForUser = useRef<string | null>(null);
@@ -85,6 +100,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setMetrics([]);
       setAthletes([]);
       setCategories([]);
+      setUnits([]);
       setLoading(false);
       return;
     }
@@ -92,27 +108,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loadedForUser.current = user.id;
 
     async function load() {
-      const [catRes, staRes, metRes, athRes] = await Promise.all([
+      const [catRes, staRes, metRes, athRes, unitRes] = await Promise.all([
         supabase.from("categories").select("*").order("name"),
         supabase.from("stations").select("*").order("sort_order"),
         supabase.from("metrics").select("*"),
         supabase.from("athletes").select("*").order("first_name"),
+        supabase.from("units").select("*").order("name"),
       ]);
 
       if (catRes.error) console.error("categories error:", catRes.error);
       if (staRes.error) console.error("stations error:", staRes.error);
       if (metRes.error) console.error("metrics error:", metRes.error);
       if (athRes.error) console.error("athletes error:", athRes.error);
+      if (unitRes.error) console.error("units error:", unitRes.error);
 
       const cats = catRes.data || [];
       const stas = staRes.data || [];
       const mets = metRes.data || [];
       const aths = athRes.data || [];
+      const uns = unitRes.data || [];
 
       const catMap: Record<string, string> = {};
       cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
 
       setCategories(cats.map((c: { name: string }) => c.name));
+      setUnits(uns.map((u: { name: string }) => u.name));
       setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string; location: string; metric_id: string | null }) => ({
         id: s.slug,
         slug: s.slug,
@@ -122,7 +142,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         location: s.location || "",
         metricId: s.metric_id || "",
       })));
-      setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; instructions: string; measurement_rules: string; gear: string; drills: string }) => ({
+      setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; instructions: string; measurement_rules: string; gear: string; drills: string; lower_is_better: boolean; min_value: number | null; max_value: number | null; unit: string; inputs: MetricInput[] | null; formula: string }) => ({
         id: m.id,
         name: m.name,
         acronym: m.acronym,
@@ -131,6 +151,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         measurementRules: m.measurement_rules,
         gear: m.gear,
         drills: m.drills,
+        lowerIsBetter: m.lower_is_better,
+        minValue: m.min_value,
+        maxValue: m.max_value,
+        unit: m.unit || "",
+        inputs: m.inputs || null,
+        formula: m.formula || "",
       })));
       setAthletes(aths.map((a: { id: string; first_name: string; last_name: string; grade: number; gender: string }) => ({
         id: a.id,
@@ -205,6 +231,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       measurement_rules: metric.measurementRules,
       gear: metric.gear,
       drills: metric.drills,
+      lower_is_better: metric.lowerIsBetter,
+      min_value: metric.minValue,
+      max_value: metric.maxValue,
+      unit: metric.unit || "",
+      inputs: metric.inputs,
+      formula: metric.formula || "",
     };
 
     // Check if this is a UUID (existing DB record) or a local id
@@ -248,16 +280,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCategories(prev => prev.filter(c => c.toLowerCase() !== name.toLowerCase()));
   }, []);
 
+  // --- Unit CRUD ---
+  const addUnit = useCallback(async (name: string) => {
+    await supabase.from("units").insert({ name });
+    setUnits(prev => [...prev, name].sort());
+  }, []);
+
+  const renameUnit = useCallback(async (oldName: string, newName: string) => {
+    await supabase.from("units").update({ name: newName }).eq("name", oldName);
+    setUnits(prev => prev.map(u => u === oldName ? newName : u).sort());
+  }, []);
+
+  const deleteUnit = useCallback(async (name: string) => {
+    await supabase.from("units").delete().eq("name", name);
+    setUnits(prev => prev.filter(u => u !== name));
+  }, []);
+
   return (
     <StoreContext.Provider value={{
       stations, setStations,
       metrics, setMetrics,
       athletes,
+      units,
       categories, setCategories,
       loading,
       saveStation, deleteStation,
       saveMetric, deleteMetric,
       addCategory, renameCategory, deleteCategory,
+      addUnit, renameUnit, deleteUnit,
     }}>
       {children}
     </StoreContext.Provider>
