@@ -2,16 +2,16 @@
 
 :root {
   --background: #F2F3F0;
-  --foreground: #111111;
+  --foreground: #141F54;
   --card: #FFFFFF;
   --border: #CBCCC9;
   --input: #CBCCC9;
-  --primary: #FF8400;
-  --primary-foreground: #111111;
+  --primary: #EFC50F;
+  --primary-foreground: #141F54;
   --secondary: #E7E8E5;
-  --secondary-foreground: #111111;
+  --secondary-foreground: #141F54;
   --destructive: #D93C15;
-  --muted-foreground: #666666;
+  --muted-foreground: #5C5C5A;
   --popover: #FFFFFF;
   --white: #FFFFFF;
 
@@ -26,9 +26,9 @@
 
   --sidebar: #E7E8E5;
   --sidebar-border: #CBCCC9;
-  --sidebar-foreground: #666666;
+  --sidebar-foreground: #5C5C5A;
   --sidebar-accent: #CBCCC9;
-  --sidebar-accent-foreground: #18181b;
+  --sidebar-accent-foreground: #141F54;
 
   --radius-none: 0px;
   --radius-m: 16px;
@@ -46,11 +46,12 @@
   }
 
   .font-primary {
-    font-family: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
+    font-family: "Quity", var(--font-host-grotesk), "Host Grotesk", sans-serif;
+    text-transform: uppercase;
   }
 
   .font-secondary {
-    font-family: var(--font-geist), "Geist", sans-serif;
+    font-family: var(--font-host-grotesk), "Host Grotesk", sans-serif;
   }
 }
 

@@ -1,22 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, JetBrains_Mono } from "next/font/google";
+import { Host_Grotesk } from "next/font/google";
 import { StoreProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
-const geist = Geist({
-  variable: "--font-geist",
-  subsets: ["latin"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
+const hostGrotesk = Host_Grotesk({
+  variable: "--font-host-grotesk",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Track Metrics",
+  title: "CHS Metrics",
   description: "Record athletic performance metrics in real time",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
@@ -34,7 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <body
-        className={`${geist.variable} ${jetbrainsMono.variable} h-full antialiased font-secondary`}
+        className={`${hostGrotesk.variable} h-full antialiased font-secondary`}
       >
         <AuthProvider>
           <StoreProvider>{children}</StoreProvider>
