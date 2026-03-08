@@ -12,18 +12,44 @@ export default function Dashboard() {
   const { stations, metrics, athletes, loading } = useStore();
   const { role, signOut } = useAuth();
   const [search, setSearch] = useState("");
+  const [genderTab, setGenderTab] = useState<"M" | "F">("M");
 
   const filteredAthletes = athletes.filter((a) => {
     const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
     return fullName.includes(search.toLowerCase());
   });
 
+  const maleAthletes = filteredAthletes.filter((a) => a.gender === "M");
+  const femaleAthletes = filteredAthletes.filter((a) => a.gender === "F");
+
+  const renderAthleteRow = (athlete: typeof athletes[0], compact: boolean) => (
+    <button
+      key={athlete.id}
+      onClick={() => router.push(`/athlete?id=${athlete.id}`)}
+      className={`flex items-center ${compact ? "gap-2 px-3 py-2" : "gap-3 px-4 py-2.5"} border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--secondary)] transition-colors cursor-pointer text-left`}
+    >
+      <div className={`${compact ? "w-7 h-7" : "w-8 h-8"} rounded-full bg-[var(--secondary)] flex items-center justify-center shrink-0`}>
+        <span className="font-mono text-[10px] font-semibold text-[var(--secondary-foreground)]">
+          {athlete.firstName[0]}{athlete.lastName[0]}
+        </span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className={`font-secondary ${compact ? "text-xs" : "text-sm"} font-medium text-[var(--foreground)] truncate`}>
+          {athlete.firstName} {athlete.lastName}
+        </div>
+        <div className={`font-secondary ${compact ? "text-[10px]" : "text-xs"} text-[var(--muted-foreground)]`}>
+          {compact ? `Gr ${athlete.grade}` : `Grade ${athlete.grade}`}
+        </div>
+      </div>
+    </button>
+  );
+
   return (
     <div className="flex flex-col h-full bg-[var(--background)]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
-        <h1 className="font-headline text-lg text-[var(--foreground)]">
-          CHS Metrics
+        <h1 className="font-headline text-2xl text-[var(--foreground)]">
+          Canby Track Metrics
         </h1>
         <div className="flex items-center gap-3">
           {role === "super_admin" && (
@@ -38,35 +64,30 @@ export default function Dashboard() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {/* Station Selector */}
-        <div className="px-4 pt-4 pb-4">
-          <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
+        {/* Station Selector - Compressed */}
+        <div className="px-4 pt-3 pb-2">
+          <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
             Stations
           </h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2">
             {stations.map((station) => {
-              const assignedMetric = metrics.find(m => m.id === station.metricId);
+              const assignedMetric = metrics.find((m) => m.id === station.metricId);
               return (
                 <button
                   key={station.id}
                   onClick={() => router.push(`/station?id=${station.id}`)}
-                  className="flex flex-col gap-2 p-4 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
+                  className="flex items-center gap-2.5 p-2.5 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
                 >
-                  <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
-                    <DynamicIcon name={station.icon} size={18} className="text-[var(--primary-foreground)]" />
+                  <div className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+                    <DynamicIcon name={station.icon} size={14} className="text-[var(--primary-foreground)]" />
                   </div>
-                  <div>
-                    <div className="font-headline text-sm text-[var(--foreground)]">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-headline text-xs text-[var(--foreground)] truncate">
                       {station.name}
                     </div>
-                    <div className="font-secondary text-xs text-[var(--muted-foreground)]">
+                    <div className="font-secondary text-[10px] text-[var(--muted-foreground)] truncate">
                       {assignedMetric ? assignedMetric.name : station.description}
                     </div>
-                    {station.location && (
-                      <div className="font-secondary text-xs text-[var(--muted-foreground)] mt-0.5">
-                        {station.location}
-                      </div>
-                    )}
                   </div>
                 </button>
               );
@@ -74,10 +95,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Sticky Search + Athletes */}
+        {/* Athletes Section */}
         <div className="px-4 pb-6">
-          <div className="sticky top-0 z-10 bg-[var(--background)] pb-3 pt-1">
-            <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
+          <div className="sticky top-0 z-10 bg-[var(--background)] pb-2 pt-1">
+            <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
               Athletes ({filteredAthletes.length})
             </h2>
             <div className="flex items-center gap-2 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-pill)] px-4 h-10">
@@ -90,28 +111,58 @@ export default function Dashboard() {
               />
             </div>
           </div>
-          <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
-            {filteredAthletes.map((athlete) => (
-              <button
-                key={athlete.id}
-                onClick={() => router.push(`/athlete?id=${athlete.id}`)}
-                className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--secondary)] transition-colors cursor-pointer text-left"
-              >
-                <div className="w-9 h-9 rounded-full bg-[var(--secondary)] flex items-center justify-center shrink-0">
-                  <span className="font-mono text-xs font-semibold text-[var(--secondary-foreground)]">
-                    {athlete.firstName[0]}{athlete.lastName[0]}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-secondary text-sm font-medium text-[var(--foreground)]">
-                    {athlete.firstName} {athlete.lastName}
-                  </div>
-                  <div className="font-secondary text-xs text-[var(--muted-foreground)]">
-                    Grade {athlete.grade} · {athlete.gender === "M" ? "Male" : "Female"}
-                  </div>
-                </div>
-              </button>
-            ))}
+
+          {/* Gender tabs for narrow screens < 350px */}
+          <div className="flex gap-1 mb-2 min-[350px]:hidden">
+            <button
+              onClick={() => setGenderTab("M")}
+              className={`flex-1 py-1.5 font-secondary text-xs font-semibold text-center transition-colors cursor-pointer ${
+                genderTab === "M"
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                  : "bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]"
+              }`}
+            >
+              Men ({maleAthletes.length})
+            </button>
+            <button
+              onClick={() => setGenderTab("F")}
+              className={`flex-1 py-1.5 font-secondary text-xs font-semibold text-center transition-colors cursor-pointer ${
+                genderTab === "F"
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                  : "bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]"
+              }`}
+            >
+              Women ({femaleAthletes.length})
+            </button>
+          </div>
+
+          {/* Single column (narrow < 350px) */}
+          <div className="min-[350px]:hidden">
+            <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+              {(genderTab === "M" ? maleAthletes : femaleAthletes).map((a) =>
+                renderAthleteRow(a, false)
+              )}
+            </div>
+          </div>
+
+          {/* Two columns (>= 350px) */}
+          <div className="hidden min-[350px]:grid grid-cols-2 gap-3">
+            <div>
+              <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
+                Men ({maleAthletes.length})
+              </h3>
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+                {maleAthletes.map((a) => renderAthleteRow(a, true))}
+              </div>
+            </div>
+            <div>
+              <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
+                Women ({femaleAthletes.length})
+              </h3>
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+                {femaleAthletes.map((a) => renderAthleteRow(a, true))}
+              </div>
+            </div>
           </div>
         </div>
       </div>

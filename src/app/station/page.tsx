@@ -33,6 +33,7 @@ function StationContent() {
   const [search, setSearch] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [baselines, setBaselines] = useState<Record<string, number>>({});
+  const [genderTab, setGenderTab] = useState<"M" | "F">("M");
 
   const isMultiInput = !!(assignedMetric?.inputs && assignedMetric.inputs.length > 1);
 
@@ -68,7 +69,6 @@ function StationContent() {
     const supabase = createClient();
 
     async function loadData() {
-      // Get start of today in ISO format
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayISO = today.toISOString();
@@ -86,12 +86,10 @@ function StationContent() {
         data.forEach((r: { athlete_id: string; value: number; recorded_at: string }) => {
           const isToday = r.recorded_at >= todayISO;
           if (isToday) {
-            // Most recent today result per athlete (first seen since sorted desc)
             if (!(r.athlete_id in todayResults)) {
               todayResults[r.athlete_id] = String(r.value);
             }
           } else {
-            // Most recent pre-today result per athlete (baseline)
             if (!(r.athlete_id in prev)) {
               prev[r.athlete_id] = Number(r.value);
             }
@@ -165,13 +163,14 @@ function StationContent() {
   });
 
   const selectedAthlete = athletes.find((a) => a.id === selectedId);
+  const maleFiltered = filteredAthletes.filter((a) => a.gender === "M");
+  const femaleFiltered = filteredAthletes.filter((a) => a.gender === "F");
 
   // Compute session stats
   const sessionStats = useMemo(() => {
     const entries = Object.entries(results);
     if (entries.length === 0) return null;
 
-    // Build list of { athlete, value, pctChange }
     const recorded = entries.map(([athleteId, val]) => {
       const athlete = athletes.find((a) => a.id === athleteId);
       const numVal = parseFloat(val);
@@ -182,7 +181,6 @@ function StationContent() {
       return { athlete, value: numVal, pctChange };
     }).filter((r) => r.athlete);
 
-    // Top marks by grade x gender
     const topByGroup: Record<string, { value: number; name: string }> = {};
     recorded.forEach((r) => {
       const a = r.athlete!;
@@ -192,7 +190,6 @@ function StationContent() {
       }
     });
 
-    // Top marks by gender
     const topMale = recorded
       .filter((r) => r.athlete!.gender === "M")
       .sort((a, b) => b.value - a.value)[0];
@@ -200,10 +197,8 @@ function StationContent() {
       .filter((r) => r.athlete!.gender === "F")
       .sort((a, b) => b.value - a.value)[0];
 
-    // Overall top
     const topOverall = [...recorded].sort((a, b) => b.value - a.value)[0];
 
-    // % change leaders (only athletes with baselines)
     const withChange = recorded.filter((r) => r.pctChange !== null);
     const topHighPct = withChange.length
       ? [...withChange].sort((a, b) => b.pctChange! - a.pctChange!)[0]
@@ -214,6 +209,64 @@ function StationContent() {
 
     return { topByGroup, topMale, topFemale, topOverall, topHighPct, topLowPct, recorded };
   }, [results, athletes, baselines]);
+
+  const renderAthleteRow = (athlete: typeof athletes[0], compact: boolean) => {
+    const isDone = !!results[athlete.id];
+    const isSelected = selectedId === athlete.id;
+    return (
+      <button
+        key={athlete.id}
+        onClick={() => canRecord && handleSelect(athlete.id)}
+        disabled={isDone || !canRecord}
+        className={`flex items-center ${compact ? "gap-2 px-2.5 py-2" : "gap-3 px-4 py-3"} w-full border-b border-[var(--border)] last:border-b-0 text-left transition-colors cursor-pointer disabled:cursor-default ${
+          isSelected
+            ? "bg-[var(--primary)]"
+            : isDone
+            ? "bg-[var(--color-success)]"
+            : "hover:bg-[var(--secondary)]"
+        }`}
+      >
+        <div
+          className={`${compact ? "w-7 h-7" : "w-9 h-9"} rounded-full flex items-center justify-center shrink-0 ${
+            isSelected ? "bg-[var(--card)]" : "bg-[var(--secondary)]"
+          }`}
+        >
+          <span
+            className={`font-mono ${compact ? "text-[10px]" : "text-xs"} font-semibold ${
+              isSelected
+                ? "text-[var(--foreground)]"
+                : "text-[var(--secondary-foreground)]"
+            }`}
+          >
+            {athlete.firstName[0]}{athlete.lastName[0]}
+          </span>
+        </div>
+        <span
+          className={`flex-1 min-w-0 font-secondary ${compact ? "text-xs truncate" : "text-sm"} font-medium ${
+            isSelected
+              ? "text-[var(--primary-foreground)] font-semibold"
+              : "text-[var(--foreground)]"
+          }`}
+        >
+          {athlete.firstName} {athlete.lastName}
+        </span>
+        {isDone ? (
+          <>
+            <span className={`font-mono ${compact ? "text-xs" : "text-sm"} font-semibold text-[var(--color-success-foreground)] shrink-0`}>
+              {results[athlete.id]}
+            </span>
+            {!compact && <Check size={16} className="text-[var(--color-success-foreground)]" />}
+          </>
+        ) : isSelected ? (
+          <Pencil size={compact ? 12 : 16} className="text-[var(--primary-foreground)] shrink-0" />
+        ) : (
+          <span className={`font-mono ${compact ? "text-xs" : "text-sm"} text-[var(--muted-foreground)] shrink-0`}>
+            —
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full bg-[var(--background)] overflow-x-hidden">
@@ -325,213 +378,189 @@ function StationContent() {
         </div>
       )}
 
-      {/* Session Stats */}
-      {sessionStats && (
-        <div className="px-4 py-3 bg-[var(--card)] border-b border-[var(--border)]">
-          <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
-            Session Stats ({sessionStats.recorded.length} recorded)
-          </h2>
+      {/* Scrollable content area */}
+      <div className="flex-1 overflow-auto">
+        {/* Session Stats */}
+        {sessionStats && (
+          <div className="px-4 py-3">
+            <h2 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
+              Session · {sessionStats.recorded.length} recorded
+            </h2>
 
-          {/* Top Marks Table */}
-          <div className="border border-[var(--border)] mb-3 overflow-hidden">
-            {/* Table header */}
-            <div className="flex bg-[var(--secondary)]">
-              <div className="w-12 px-2 py-1.5">
-                <span className="font-primary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase">Year</span>
+            {/* Top Marks Table */}
+            <div className="bg-[var(--card)] border border-[var(--border)] mb-2">
+              {/* Header */}
+              <div className="flex px-3 py-1 border-b border-[var(--border)]">
+                <span className="w-10 font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase">Yr</span>
+                <span className="flex-1 font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase">Men</span>
+                <span className="flex-1 font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase">Women</span>
               </div>
-              <div className="flex-1 px-2 py-1.5">
-                <span className="font-primary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase">Male</span>
-              </div>
-              <div className="flex-1 px-2 py-1.5">
-                <span className="font-primary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase">Female</span>
-              </div>
-            </div>
-            {/* Grade rows */}
-            {[12, 11, 10, 9].map((grade) => {
-              const maleKey = `${grade}-M`;
-              const femaleKey = `${grade}-F`;
-              const male = sessionStats.topByGroup[maleKey];
-              const female = sessionStats.topByGroup[femaleKey];
-              if (!male && !female) return null;
-              return (
-                <div key={grade} className="flex border-t border-[var(--border)]">
-                  <div className="w-12 px-2 py-1.5 flex items-center">
-                    <span className="font-mono text-xs font-semibold text-[var(--foreground)]">
+              {/* Grade rows */}
+              {[12, 11, 10, 9].map((grade) => {
+                const maleKey = `${grade}-M`;
+                const femaleKey = `${grade}-F`;
+                const male = sessionStats.topByGroup[maleKey];
+                const female = sessionStats.topByGroup[femaleKey];
+                if (!male && !female) return null;
+                return (
+                  <div key={grade} className="flex items-center px-3 py-1 border-b border-[var(--border)] last:border-b-0">
+                    <span className="w-10 font-mono text-xs font-semibold text-[var(--foreground)]">
                       {GRADE_LABELS[grade]}
                     </span>
+                    <div className="flex-1">
+                      {male ? (
+                        <>
+                          <span className="font-mono text-sm font-bold text-[var(--foreground)]">{male.value}</span>
+                          <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">{male.name}</span>
+                        </>
+                      ) : (
+                        <span className="font-mono text-xs text-[var(--muted-foreground)]">—</span>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      {female ? (
+                        <>
+                          <span className="font-mono text-sm font-bold text-[var(--foreground)]">{female.value}</span>
+                          <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">{female.name}</span>
+                        </>
+                      ) : (
+                        <span className="font-mono text-xs text-[var(--muted-foreground)]">—</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex-1 px-2 py-1.5">
-                    {male ? (
-                      <div>
-                        <span className="font-mono text-sm font-bold text-[var(--foreground)]">{male.value}</span>
-                        <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">{male.name}</span>
-                      </div>
-                    ) : (
-                      <span className="font-secondary text-xs text-[var(--muted-foreground)]">—</span>
-                    )}
-                  </div>
-                  <div className="flex-1 px-2 py-1.5">
-                    {female ? (
-                      <div>
-                        <span className="font-mono text-sm font-bold text-[var(--foreground)]">{female.value}</span>
-                        <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">{female.name}</span>
-                      </div>
-                    ) : (
-                      <span className="font-secondary text-xs text-[var(--muted-foreground)]">—</span>
-                    )}
-                  </div>
+                );
+              })}
+              {/* Top overall row */}
+              <div className="flex items-center px-3 py-1 border-t-2 border-[var(--primary)]">
+                <span className="w-10 font-secondary text-[10px] font-bold text-[var(--foreground)] uppercase">Top</span>
+                <div className="flex-1">
+                  {sessionStats.topMale ? (
+                    <>
+                      <span className="font-mono text-sm font-bold text-[var(--foreground)]">{sessionStats.topMale.value}</span>
+                      <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">
+                        {sessionStats.topMale.athlete!.firstName} {sessionStats.topMale.athlete!.lastName[0]}.
+                      </span>
+                    </>
+                  ) : (
+                    <span className="font-mono text-xs text-[var(--muted-foreground)]">—</span>
+                  )}
                 </div>
-              );
-            })}
-            {/* Overall row */}
-            <div className="flex border-t border-[var(--border)] bg-[var(--secondary)]">
-              <div className="w-12 px-2 py-1.5 flex items-center">
-                <span className="font-primary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase">Top</span>
-              </div>
-              <div className="flex-1 px-2 py-1.5">
-                {sessionStats.topMale ? (
-                  <div>
-                    <span className="font-mono text-sm font-bold text-[var(--foreground)]">{sessionStats.topMale.value}</span>
-                    <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">
-                      {sessionStats.topMale.athlete!.firstName} {sessionStats.topMale.athlete!.lastName[0]}.
-                    </span>
-                  </div>
-                ) : (
-                  <span className="font-secondary text-xs text-[var(--muted-foreground)]">—</span>
-                )}
-              </div>
-              <div className="flex-1 px-2 py-1.5">
-                {sessionStats.topFemale ? (
-                  <div>
-                    <span className="font-mono text-sm font-bold text-[var(--foreground)]">{sessionStats.topFemale.value}</span>
-                    <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">
-                      {sessionStats.topFemale.athlete!.firstName} {sessionStats.topFemale.athlete!.lastName[0]}.
-                    </span>
-                  </div>
-                ) : (
-                  <span className="font-secondary text-xs text-[var(--muted-foreground)]">—</span>
-                )}
+                <div className="flex-1">
+                  {sessionStats.topFemale ? (
+                    <>
+                      <span className="font-mono text-sm font-bold text-[var(--foreground)]">{sessionStats.topFemale.value}</span>
+                      <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">
+                        {sessionStats.topFemale.athlete!.firstName} {sessionStats.topFemale.athlete!.lastName[0]}.
+                      </span>
+                    </>
+                  ) : (
+                    <span className="font-mono text-xs text-[var(--muted-foreground)]">—</span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* % Change Leaders */}
-          {(sessionStats.topHighPct || sessionStats.topLowPct) && (
-            <div className="flex flex-col gap-1.5">
-              <span className="font-primary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
-                Top % Change
-              </span>
-              <div className="flex gap-3">
+            {/* % Change Leaders */}
+            {(sessionStats.topHighPct || sessionStats.topLowPct) && (
+              <div className="flex gap-2">
                 {sessionStats.topHighPct && (
-                  <div className="flex-1 flex items-center gap-1.5 px-3 py-2 bg-[var(--color-success)] rounded-sm">
-                    <TrendingUp size={14} className="text-[var(--color-success-foreground)] shrink-0" />
-                    <div className="min-w-0">
-                      <span className="font-mono text-sm font-bold text-[var(--color-success-foreground)]">
-                        +{sessionStats.topHighPct.pctChange!.toFixed(1)}%
-                      </span>
-                      <span className="font-secondary text-[10px] text-[var(--color-success-foreground)] ml-1 truncate">
-                        {sessionStats.topHighPct.athlete!.firstName} {sessionStats.topHighPct.athlete!.lastName[0]}.
-                      </span>
-                    </div>
+                  <div className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--color-success)] border border-[var(--border)]">
+                    <TrendingUp size={12} className="text-[var(--color-success-foreground)] shrink-0" />
+                    <span className="font-mono text-xs font-bold text-[var(--color-success-foreground)]">
+                      +{sessionStats.topHighPct.pctChange!.toFixed(1)}%
+                    </span>
+                    <span className="font-secondary text-[9px] text-[var(--color-success-foreground)] truncate">
+                      {sessionStats.topHighPct.athlete!.firstName} {sessionStats.topHighPct.athlete!.lastName[0]}.
+                    </span>
                   </div>
                 )}
                 {sessionStats.topLowPct && (
-                  <div className="flex-1 flex items-center gap-1.5 px-3 py-2 bg-[var(--color-error)] rounded-sm">
-                    <TrendingDown size={14} className="text-[var(--color-error-foreground)] shrink-0" />
-                    <div className="min-w-0">
-                      <span className="font-mono text-sm font-bold text-[var(--color-error-foreground)]">
-                        {sessionStats.topLowPct.pctChange!.toFixed(1)}%
-                      </span>
-                      <span className="font-secondary text-[10px] text-[var(--color-error-foreground)] ml-1 truncate">
-                        {sessionStats.topLowPct.athlete!.firstName} {sessionStats.topLowPct.athlete!.lastName[0]}.
-                      </span>
-                    </div>
+                  <div className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--color-error)] border border-[var(--border)]">
+                    <TrendingDown size={12} className="text-[var(--color-error-foreground)] shrink-0" />
+                    <span className="font-mono text-xs font-bold text-[var(--color-error-foreground)]">
+                      {sessionStats.topLowPct.pctChange!.toFixed(1)}%
+                    </span>
+                    <span className="font-secondary text-[9px] text-[var(--color-error-foreground)] truncate">
+                      {sessionStats.topLowPct.athlete!.firstName} {sessionStats.topLowPct.athlete!.lastName[0]}.
+                    </span>
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Athlete Queue */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center gap-2 px-4 py-3">
-          <div className="flex-1 flex items-center gap-2">
-            <Search size={16} className="text-[var(--muted-foreground)]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search athletes..."
-              className="flex-1 bg-transparent font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none"
-            />
+            )}
           </div>
-          <span className="font-mono text-xs font-semibold text-[var(--muted-foreground)]">
-            {completed}/{total}
-          </span>
-        </div>
+        )}
 
-        <div className="flex-1 overflow-auto">
-          {filteredAthletes.map((athlete) => {
-            const isDone = !!results[athlete.id];
-            const isSelected = selectedId === athlete.id;
+        {/* Athlete Queue */}
+        <div className="px-4 pb-6">
+          <div className="sticky top-0 z-10 bg-[var(--background)] pb-2 pt-1">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 flex items-center gap-2">
+                <Search size={16} className="text-[var(--muted-foreground)]" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search athletes..."
+                  className="flex-1 bg-transparent font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none"
+                />
+              </div>
+              <span className="font-mono text-xs font-semibold text-[var(--muted-foreground)]">
+                {completed}/{total}
+              </span>
+            </div>
+          </div>
 
-            return (
-              <button
-                key={athlete.id}
-                onClick={() => canRecord && handleSelect(athlete.id)}
-                disabled={isDone || !canRecord}
-                className={`flex items-center gap-3 w-full px-4 py-3 border-b border-[var(--border)] text-left transition-colors cursor-pointer disabled:cursor-default ${
-                  isSelected
-                    ? "bg-[var(--primary)]"
-                    : isDone
-                    ? "bg-[var(--color-success)]"
-                    : "hover:bg-[var(--secondary)]"
-                }`}
-              >
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
-                    isSelected
-                      ? "bg-[var(--card)]"
-                      : "bg-[var(--secondary)]"
-                  }`}
-                >
-                  <span
-                    className={`font-mono text-xs font-semibold ${
-                      isSelected
-                        ? "text-[var(--foreground)]"
-                        : "text-[var(--secondary-foreground)]"
-                    }`}
-                  >
-                    {athlete.firstName[0]}{athlete.lastName[0]}
-                  </span>
-                </div>
-                <span
-                  className={`flex-1 font-secondary text-sm font-medium ${
-                    isSelected
-                      ? "text-[var(--primary-foreground)] font-semibold"
-                      : "text-[var(--foreground)]"
-                  }`}
-                >
-                  {athlete.firstName} {athlete.lastName}
-                </span>
-                {isDone ? (
-                  <>
-                    <span className="font-mono text-sm font-semibold text-[var(--color-success-foreground)]">
-                      {results[athlete.id]}
-                    </span>
-                    <Check size={16} className="text-[var(--color-success-foreground)]" />
-                  </>
-                ) : isSelected ? (
-                  <Pencil size={16} className="text-[var(--primary-foreground)]" />
-                ) : (
-                  <span className="font-mono text-sm text-[var(--muted-foreground)]">
-                    —
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {/* Gender tabs for narrow screens < 350px */}
+          <div className="flex gap-1 mb-2 min-[350px]:hidden">
+            <button
+              onClick={() => setGenderTab("M")}
+              className={`flex-1 py-1.5 font-secondary text-xs font-semibold text-center transition-colors cursor-pointer ${
+                genderTab === "M"
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                  : "bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]"
+              }`}
+            >
+              Men ({maleFiltered.length})
+            </button>
+            <button
+              onClick={() => setGenderTab("F")}
+              className={`flex-1 py-1.5 font-secondary text-xs font-semibold text-center transition-colors cursor-pointer ${
+                genderTab === "F"
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                  : "bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]"
+              }`}
+            >
+              Women ({femaleFiltered.length})
+            </button>
+          </div>
+
+          {/* Single column (narrow < 350px) */}
+          <div className="min-[350px]:hidden">
+            <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+              {(genderTab === "M" ? maleFiltered : femaleFiltered).map((a) =>
+                renderAthleteRow(a, false)
+              )}
+            </div>
+          </div>
+
+          {/* Two columns (>= 350px) */}
+          <div className="hidden min-[350px]:grid grid-cols-2 gap-3">
+            <div>
+              <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
+                Men ({maleFiltered.length})
+              </h3>
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+                {maleFiltered.map((a) => renderAthleteRow(a, true))}
+              </div>
+            </div>
+            <div>
+              <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
+                Women ({femaleFiltered.length})
+              </h3>
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+                {femaleFiltered.map((a) => renderAthleteRow(a, true))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

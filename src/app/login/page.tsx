@@ -89,7 +89,7 @@ function LoginContent() {
       <div className="w-full max-w-[390px] flex flex-col items-center gap-8">
         <div className="flex flex-col items-center gap-2">
           <Image src="/logo.png" alt="Canby Cougars" width={72} height={72} className="w-[72px] h-[72px]" />
-          <h1 className="font-headline text-2xl text-[var(--foreground)]">CHS App</h1>
+          <h1 className="font-headline text-3xl text-[var(--foreground)]">Canby Track Metrics</h1>
           <p className="font-secondary text-sm text-[var(--muted-foreground)]">{subtitle}</p>
         </div>
 
