@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Pencil, Trash2, X, Check, LayoutGrid } from "lucide-react";
 import { useStore, AVAILABLE_ICONS, type Metric, type Station } from "@/lib/store";
+import { useAuth } from "@/lib/auth-context";
 import { DynamicIcon } from "@/components/DynamicIcon";
 
 type View = "list" | "editMetric" | "categories" | "stations" | "editStation";
 
 export default function AdminMetricsPage() {
   const router = useRouter();
+  const { role, loading: authLoading } = useAuth();
   const {
     stations, metrics, categories, loading,
     saveStation, deleteStation: removeStation,
@@ -17,16 +19,22 @@ export default function AdminMetricsPage() {
     addCategory, renameCategory, deleteCategory,
   } = useStore();
 
+  useEffect(() => {
+    if (!authLoading && role !== "super_admin") {
+      router.push("/");
+    }
+  }, [authLoading, role, router]);
+
   const [view, setView] = useState<View>("list");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Metric form
-  const [form, setForm] = useState<Metric>({ id: "", name: "", acronym: "", category: "", station: "", instructions: "", measurementRules: "", gear: "", drills: "" });
+  // Metric form (no more station field)
+  const [form, setForm] = useState<Metric>({ id: "", name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "" });
   const updateForm = (field: keyof Metric, value: string) => setForm((prev) => ({ ...prev, [field]: value }));
 
-  // Station form
-  const [stationForm, setStationForm] = useState<Station>({ id: "", name: "", icon: "zap", description: "" });
+  // Station form (now has location + metricId)
+  const [stationForm, setStationForm] = useState<Station>({ id: "", name: "", icon: "zap", description: "", location: "", metricId: "" });
   const updateStation = (field: keyof Station, value: string) => setStationForm((prev) => ({ ...prev, [field]: value }));
 
   // Category editing
@@ -36,7 +44,7 @@ export default function AdminMetricsPage() {
 
   // --- Metric handlers ---
   const handleEditMetric = (metric: Metric) => { setEditingId(metric.id); setForm({ ...metric }); setView("editMetric"); };
-  const handleNewMetric = () => { setForm({ id: `metric-${Date.now()}`, name: "", acronym: "", category: "", station: "", instructions: "", measurementRules: "", gear: "", drills: "" }); setEditingId(null); setView("editMetric"); };
+  const handleNewMetric = () => { setForm({ id: `metric-${Date.now()}`, name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "" }); setEditingId(null); setView("editMetric"); };
   const handleSaveMetric = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || saving) return;
@@ -51,7 +59,7 @@ export default function AdminMetricsPage() {
 
   // --- Station handlers ---
   const handleEditStation = (station: Station) => { setStationForm({ ...station }); setView("editStation"); };
-  const handleNewStation = () => { setStationForm({ id: `station-${Date.now()}`, name: "", icon: "zap", description: "" }); setView("editStation"); };
+  const handleNewStation = () => { setStationForm({ id: `station-${Date.now()}`, name: "", icon: "zap", description: "", location: "", metricId: "" }); setView("editStation"); };
   const handleSaveStation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stationForm.name || saving) return;
@@ -88,7 +96,7 @@ export default function AdminMetricsPage() {
   const inputCls = "h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)]";
   const textareaCls = "rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] p-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)] resize-none";
 
-  if (loading) {
+  if (loading || authLoading || role !== "super_admin") {
     return (
       <div className="flex items-center justify-center h-full bg-[var(--background)]">
         <span className="font-secondary text-sm text-[var(--muted-foreground)]">Loading...</span>
@@ -98,6 +106,7 @@ export default function AdminMetricsPage() {
 
   // ===================== EDIT STATION VIEW =====================
   if (view === "editStation") {
+    const assignedMetric = metrics.find(m => m.id === stationForm.metricId);
     return (
       <div className="flex flex-col h-full bg-[var(--background)]">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
@@ -109,12 +118,32 @@ export default function AdminMetricsPage() {
         <form onSubmit={handleSaveStation} className="flex-1 overflow-auto p-4 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Station Name</label>
-            <input value={stationForm.name} onChange={(e) => updateStation("name", e.target.value)} placeholder="e.g. RSI" className={inputCls} />
+            <input value={stationForm.name} onChange={(e) => updateStation("name", e.target.value)} placeholder="e.g. Station 1" className={inputCls} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Description</label>
             <input value={stationForm.description} onChange={(e) => updateStation("description", e.target.value)} placeholder="e.g. Reactive Strength Index" className={inputCls} />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Location</label>
+            <input value={stationForm.location} onChange={(e) => updateStation("location", e.target.value)} placeholder="e.g. Near the long jump pit" className={inputCls} />
+          </div>
+
+          {/* Metric assignment */}
+          <div className="flex flex-col gap-1.5">
+            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Metric to Measure</label>
+            <select value={stationForm.metricId} onChange={(e) => updateStation("metricId", e.target.value)} className={inputCls + " appearance-none cursor-pointer"}>
+              <option value="">None</option>
+              {metrics.map((m) => (<option key={m.id} value={m.id}>{m.name} ({m.acronym})</option>))}
+            </select>
+            {assignedMetric && (
+              <div className="mt-1 p-3 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-m)]">
+                <div className="font-secondary text-xs text-[var(--muted-foreground)]">{assignedMetric.instructions}</div>
+                {assignedMetric.gear && <div className="font-secondary text-xs text-[var(--muted-foreground)] mt-1">Gear: {assignedMetric.gear}</div>}
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Icon</label>
             <div className="grid grid-cols-6 gap-2">
@@ -164,7 +193,7 @@ export default function AdminMetricsPage() {
         </div>
         <div className="flex-1 overflow-auto">
           {stations.map((station) => {
-            const metricCount = metrics.filter((m) => m.station === station.id).length;
+            const assignedMetric = metrics.find(m => m.id === station.metricId);
             return (
               <div key={station.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
                 <div className="w-10 h-10 rounded-[var(--radius-m)] bg-[var(--secondary)] flex items-center justify-center shrink-0">
@@ -172,7 +201,10 @@ export default function AdminMetricsPage() {
                 </div>
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditStation(station)}>
                   <div className="font-primary text-sm font-semibold text-[var(--foreground)]">{station.name}</div>
-                  <div className="font-secondary text-xs text-[var(--muted-foreground)]">{station.description} · {metricCount} metric{metricCount !== 1 ? "s" : ""}</div>
+                  <div className="font-secondary text-xs text-[var(--muted-foreground)]">
+                    {assignedMetric ? assignedMetric.name : "No metric assigned"}
+                    {station.location ? ` · ${station.location}` : ""}
+                  </div>
                 </div>
                 <button onClick={() => handleEditStation(station)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
                   <Pencil size={16} className="text-[var(--muted-foreground)]" />
@@ -255,18 +287,6 @@ export default function AdminMetricsPage() {
             </div>
           </div>
 
-          {/* Station assignment */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Station</label>
-              <button type="button" onClick={() => setView("stations")} className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer">Edit stations</button>
-            </div>
-            <select value={form.station} onChange={(e) => updateForm("station", e.target.value)} className={inputCls + " appearance-none cursor-pointer"}>
-              <option value="">None</option>
-              {stations.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-            </select>
-          </div>
-
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Instructions</label>
             <textarea value={form.instructions} onChange={(e) => updateForm("instructions", e.target.value)} placeholder="How to perform this measurement..." rows={3} className={textareaCls} />
@@ -314,7 +334,6 @@ export default function AdminMetricsPage() {
 
       <div className="flex-1 overflow-auto">
         {metrics.map((metric) => {
-          const station = stations.find((s) => s.id === metric.station);
           return (
             <div key={metric.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
               <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditMetric(metric)}>
@@ -324,7 +343,6 @@ export default function AdminMetricsPage() {
                 </div>
                 <div className="font-secondary text-xs text-[var(--muted-foreground)] mt-0.5">
                   {categories.find((c) => c.toLowerCase() === metric.category) || metric.category}
-                  {station ? ` · ${station.name}` : ""}
                   {metric.gear ? ` · ${metric.gear}` : ""}
                 </div>
               </div>

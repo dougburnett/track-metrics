@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { supabase } from "./supabase";
+import { createClient } from "./supabase";
 
 // --- Types ---
 
@@ -11,6 +11,8 @@ export interface Station {
   name: string;
   icon: string;
   description: string;
+  location: string;
+  metricId: string; // uuid of assigned metric
 }
 
 export interface Metric {
@@ -18,7 +20,6 @@ export interface Metric {
   name: string;
   acronym: string;
   category: string;
-  station: string;
   instructions: string;
   measurementRules: string;
   gear: string;
@@ -56,14 +57,11 @@ interface StoreContextType {
 const StoreContext = createContext<StoreContextType | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const supabase = createClient();
   const [stations, setStations] = useState<Station[]>([]);
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Maps for resolving DB foreign keys to local slugs/names
-  const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
-  const [stationMap, setStationMap] = useState<Record<string, string>>({});
 
   // Load from Supabase on mount
   useEffect(() => {
@@ -78,28 +76,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const stas = staRes.data || [];
       const mets = metRes.data || [];
 
-      // Build lookup maps: uuid -> name/slug
+      // Build category lookup: uuid -> name
       const catMap: Record<string, string> = {};
-      const staMap: Record<string, string> = {};
       cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
-      stas.forEach((s: { id: string; slug: string }) => { staMap[s.id] = s.slug; });
-      setCategoryMap(catMap);
-      setStationMap(staMap);
 
       setCategories(cats.map((c: { name: string }) => c.name));
-      setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string }) => ({
+      setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string; location: string; metric_id: string | null }) => ({
         id: s.slug,
         slug: s.slug,
         name: s.name,
         icon: s.icon,
         description: s.description,
+        location: s.location || "",
+        metricId: s.metric_id || "",
       })));
-      setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; station_id: string; instructions: string; measurement_rules: string; gear: string; drills: string }) => ({
+      setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; instructions: string; measurement_rules: string; gear: string; drills: string }) => ({
         id: m.id,
         name: m.name,
         acronym: m.acronym,
         category: (catMap[m.category_id] || "").toLowerCase(),
-        station: staMap[m.station_id] || "",
         instructions: m.instructions,
         measurementRules: m.measurement_rules,
         gear: m.gear,
@@ -113,12 +108,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // --- Station CRUD ---
   const saveStation = useCallback(async (station: Station) => {
     const slug = station.id;
+
+    // Resolve metric_id: if metricId is set, use it directly (it's already a UUID)
+    const metricId = station.metricId || null;
+
     const { data: existing } = await supabase.from("stations").select("id").eq("slug", slug).single();
     if (existing) {
       await supabase.from("stations").update({
         name: station.name,
         icon: station.icon,
         description: station.description,
+        location: station.location,
+        metric_id: metricId,
       }).eq("id", existing.id);
     } else {
       await supabase.from("stations").insert({
@@ -126,6 +127,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         name: station.name,
         icon: station.icon,
         description: station.description,
+        location: station.location,
+        metric_id: metricId,
         sort_order: 99,
       });
     }
@@ -154,25 +157,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .ilike("name", metric.category)
       .single();
 
-    // Resolve station slug -> uuid
-    const { data: staRow } = await supabase
-      .from("stations")
-      .select("id")
-      .eq("slug", metric.station)
-      .single();
-
     const row = {
       name: metric.name,
       acronym: metric.acronym,
       category_id: catRow?.id || null,
-      station_id: staRow?.id || null,
       instructions: metric.instructions,
       measurement_rules: metric.measurementRules,
       gear: metric.gear,
       drills: metric.drills,
     };
 
-    // Check if this is a UUID (existing DB record) or a local slug
+    // Check if this is a UUID (existing DB record) or a local id
     const isUUID = metric.id.includes("-") && metric.id.length > 30;
     if (isUUID) {
       await supabase.from("metrics").update(row).eq("id", metric.id);

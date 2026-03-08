@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Search, User, Settings } from "lucide-react";
+import { Search, User, Settings, LogOut } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth-context";
 import { DynamicIcon } from "@/components/DynamicIcon";
 
 const recentAthletes = [
@@ -16,7 +17,8 @@ const recentAthletes = [
 
 export default function Dashboard() {
   const router = useRouter();
-  const { stations, loading } = useStore();
+  const { stations, metrics, loading } = useStore();
+  const { role, signOut } = useAuth();
   const [search, setSearch] = useState("");
 
   const filteredAthletes = recentAthletes.filter((a) =>
@@ -31,12 +33,14 @@ export default function Dashboard() {
           Track Metrics
         </h1>
         <div className="flex items-center gap-3">
-          <button onClick={() => router.push("/admin/metrics")} className="cursor-pointer" title="Settings">
-            <Settings size={20} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" />
+          {role === "super_admin" && (
+            <button onClick={() => router.push("/admin/metrics")} className="cursor-pointer" title="Settings">
+              <Settings size={20} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" />
+            </button>
+          )}
+          <button onClick={signOut} className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center cursor-pointer" title="Sign out">
+            <LogOut size={16} className="text-[var(--primary-foreground)]" />
           </button>
-          <div className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center">
-            <User size={18} className="text-[var(--primary-foreground)]" />
-          </div>
         </div>
       </div>
 
@@ -60,23 +64,31 @@ export default function Dashboard() {
             Stations
           </h2>
           <div className="grid grid-cols-2 gap-3">
-            {stations.map((station) => (
-              <button
-                key={station.id}
-                onClick={() => router.push(`/station?id=${station.id}`)}
-                className="flex flex-col gap-2 p-4 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
-              >
-                <DynamicIcon name={station.icon} size={20} className="text-[var(--primary)]" />
-                <div>
-                  <div className="font-primary text-sm font-semibold text-[var(--foreground)]">
-                    {station.name}
+            {stations.map((station) => {
+              const assignedMetric = metrics.find(m => m.id === station.metricId);
+              return (
+                <button
+                  key={station.id}
+                  onClick={() => router.push(`/station?id=${station.id}`)}
+                  className="flex flex-col gap-2 p-4 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
+                >
+                  <DynamicIcon name={station.icon} size={20} className="text-[var(--primary)]" />
+                  <div>
+                    <div className="font-primary text-sm font-semibold text-[var(--foreground)]">
+                      {station.name}
+                    </div>
+                    <div className="font-secondary text-xs text-[var(--muted-foreground)]">
+                      {assignedMetric ? assignedMetric.name : station.description}
+                    </div>
+                    {station.location && (
+                      <div className="font-secondary text-xs text-[var(--muted-foreground)] mt-0.5">
+                        {station.location}
+                      </div>
+                    )}
                   </div>
-                  <div className="font-secondary text-xs text-[var(--muted-foreground)]">
-                    {station.description}
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
 

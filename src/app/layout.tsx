@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, JetBrains_Mono } from "next/font/google";
 import { StoreProvider } from "@/lib/store";
+import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
 const geist = Geist({
@@ -28,7 +29,9 @@ export default function RootLayout({
       <body
         className={`${geist.variable} ${jetbrainsMono.variable} h-full antialiased font-secondary`}
       >
-        <StoreProvider>{children}</StoreProvider>
+        <AuthProvider>
+          <StoreProvider>{children}</StoreProvider>
+        </AuthProvider>
       </body>
     </html>
   );

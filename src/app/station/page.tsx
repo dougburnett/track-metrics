@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Info, Search, Check, Pencil, Undo2, X } from "lucide-react";
+import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth-context";
 
 const athletes = [
   { id: 1, name: "Alex Smith", initials: "AS", age: 17, events: "Sprints" },
@@ -15,29 +17,21 @@ const athletes = [
   { id: 8, name: "Derek Martinez", initials: "DM", age: 17, events: "Sprints" },
 ];
 
-const stationNames: Record<string, string> = {
-  rsi: "RSI Station",
-  sprint: "Sprint Splits",
-  vertical: "Vertical Jump",
-  balance: "Balance",
-  explosiveness: "Explosiveness",
-  strength: "Strength",
-};
-
-const stationInfo: Record<string, string> = {
-  rsi: "Best of 3 attempts · Contact Mat",
-  sprint: "Electronic timing · 10m splits",
-  vertical: "Vertec or jump mat · Best of 3",
-  balance: "Single leg · Eyes open · 60s max",
-  explosiveness: "Standing broad jump · Best of 3",
-  strength: "1RM or max reps · Spotter required",
-};
-
 function StationContent() {
   const router = useRouter();
   const params = useSearchParams();
   const stationId = params.get("id") || "rsi";
   const inputRef = useRef<HTMLInputElement>(null);
+  const { stations, metrics } = useStore();
+  const { role } = useAuth();
+  const canRecord = role === "super_admin" || role === "admin";
+
+  const station = stations.find(s => s.id === stationId);
+  const assignedMetric = station ? metrics.find(m => m.id === station.metricId) : null;
+  const stationName = station?.name || "Station";
+  const stationInfoText = assignedMetric
+    ? `${assignedMetric.measurementRules} · ${assignedMetric.gear}`
+    : station?.description || "Follow standard protocol";
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [value, setValue] = useState("");
@@ -87,7 +81,7 @@ function StationContent() {
           <ArrowLeft size={24} className="text-[var(--foreground)]" />
         </button>
         <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
-          {stationNames[stationId] || "Station"}
+          {stationName}
         </h1>
         <button onClick={() => setShowInfo(!showInfo)} className="cursor-pointer">
           <Info size={24} className="text-[var(--muted-foreground)]" />
@@ -98,7 +92,7 @@ function StationContent() {
       {showInfo && (
         <div className="flex items-center gap-3 px-4 py-2.5 bg-[var(--secondary)]">
           <span className="font-secondary text-xs text-[var(--muted-foreground)]">
-            {stationInfo[stationId] || "Follow standard protocol"}
+            {stationInfoText}
           </span>
           <button onClick={() => setShowInfo(false)} className="ml-auto cursor-pointer">
             <X size={14} className="text-[var(--muted-foreground)]" />
@@ -107,7 +101,7 @@ function StationContent() {
       )}
 
       {/* Entry Section */}
-      {selectedAthlete && (
+      {canRecord && selectedAthlete && (
         <div className="flex flex-col gap-4 p-5 bg-[var(--card)] border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-full bg-[var(--secondary)] flex items-center justify-center">
@@ -139,7 +133,7 @@ function StationContent() {
               className="flex-1 bg-transparent font-primary text-3xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
             <span className="font-secondary text-sm text-[var(--muted-foreground)]">
-              {stationId.toUpperCase()}
+              {assignedMetric?.acronym || stationId.toUpperCase()}
             </span>
           </div>
 
@@ -178,8 +172,8 @@ function StationContent() {
             return (
               <button
                 key={athlete.id}
-                onClick={() => handleSelect(athlete.id)}
-                disabled={isDone}
+                onClick={() => canRecord && handleSelect(athlete.id)}
+                disabled={isDone || !canRecord}
                 className={`flex items-center gap-3 w-full px-4 py-3 border-b border-[var(--border)] text-left transition-colors cursor-pointer disabled:cursor-default ${
                   isSelected
                     ? "bg-[var(--primary)]"
