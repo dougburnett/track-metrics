@@ -1,11 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import { Host_Grotesk } from "next/font/google";
+import { Host_Grotesk, JetBrains_Mono } from "next/font/google";
 import { StoreProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
 const hostGrotesk = Host_Grotesk({
   variable: "--font-host-grotesk",
+  subsets: ["latin"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
 });
 
@@ -33,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <body
-        className={`${hostGrotesk.variable} h-full antialiased font-secondary`}
+        className={`${hostGrotesk.variable} ${jetbrainsMono.variable} h-full antialiased font-secondary`}
       >
         <AuthProvider>
           <StoreProvider>{children}</StoreProvider>

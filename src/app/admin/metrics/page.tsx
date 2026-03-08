@@ -139,7 +139,7 @@ export default function AdminMetricsPage() {
       <div className="flex flex-col h-full bg-[var(--background)]">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
           <button onClick={() => setView("stations")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-          <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
+          <h1 className="font-headline text-lg text-[var(--foreground)]">
             {stations.find((s) => s.id === stationForm.id) ? "Edit Station" : "New Station"}
           </h1>
         </div>
@@ -180,16 +180,16 @@ export default function AdminMetricsPage() {
                   key={icon}
                   type="button"
                   onClick={() => updateStation("icon", icon)}
-                  className={`flex items-center justify-center w-full aspect-square rounded-[var(--radius-m)] border transition-colors cursor-pointer ${
+                  className={`flex items-center justify-center w-full aspect-square rounded-full border transition-colors cursor-pointer ${
                     stationForm.icon === icon
-                      ? "border-[var(--primary)] bg-[var(--primary)] bg-opacity-10"
+                      ? "border-[var(--primary)] bg-[var(--primary)]"
                       : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]"
                   }`}
                 >
                   <DynamicIcon
                     name={icon}
                     size={20}
-                    className={stationForm.icon === icon ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
+                    className={stationForm.icon === icon ? "text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)]"}
                   />
                 </button>
               ))}
@@ -213,7 +213,7 @@ export default function AdminMetricsPage() {
         <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-            <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">Edit Stations</h1>
+            <h1 className="font-headline text-lg text-[var(--foreground)]">Edit Stations</h1>
           </div>
           <button onClick={handleNewStation} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
             <Plus size={18} /> Add
@@ -224,11 +224,11 @@ export default function AdminMetricsPage() {
             const assignedMetric = metrics.find(m => m.id === station.metricId);
             return (
               <div key={station.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
-                <div className="w-10 h-10 rounded-[var(--radius-m)] bg-[var(--secondary)] flex items-center justify-center shrink-0">
-                  <DynamicIcon name={station.icon} size={20} className="text-[var(--primary)]" />
+                <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+                  <DynamicIcon name={station.icon} size={18} className="text-[var(--primary-foreground)]" />
                 </div>
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditStation(station)}>
-                  <div className="font-primary text-sm font-semibold text-[var(--foreground)]">{station.name}</div>
+                  <div className="font-headline text-sm text-[var(--foreground)]">{station.name}</div>
                   <div className="font-secondary text-xs text-[var(--muted-foreground)]">
                     {assignedMetric ? assignedMetric.name : "No metric assigned"}
                     {station.location ? ` · ${station.location}` : ""}
@@ -254,7 +254,7 @@ export default function AdminMetricsPage() {
       <div className="flex flex-col h-full bg-[var(--background)]">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
           <button onClick={() => { setView("editMetric"); setRenamingIdx(null); }} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-          <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">Edit Categories</h1>
+          <h1 className="font-headline text-lg text-[var(--foreground)]">Edit Categories</h1>
         </div>
         <div className="flex-1 overflow-auto">
           {categories.map((cat, idx) => (
@@ -289,7 +289,7 @@ export default function AdminMetricsPage() {
       <div className="flex flex-col h-full bg-[var(--background)]">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
           <button onClick={() => { setView("editMetric"); setRenamingUnitIdx(null); }} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-          <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">Edit Units</h1>
+          <h1 className="font-headline text-lg text-[var(--foreground)]">Edit Units</h1>
         </div>
         <div className="flex-1 overflow-auto">
           {units.map((u, idx) => (
@@ -324,7 +324,7 @@ export default function AdminMetricsPage() {
       <div className="flex flex-col h-full bg-[var(--background)]">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
           <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-          <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
+          <h1 className="font-headline text-lg text-[var(--foreground)]">
             {editingId ? "Edit Metric" : "New Metric"}
           </h1>
         </div>
@@ -386,7 +386,7 @@ export default function AdminMetricsPage() {
               <div className="flex flex-col gap-2">
                 {form.inputs.map((inp, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <span className="font-primary text-sm font-bold text-[var(--primary)] w-6 text-center shrink-0">{indexToVar(i)}</span>
+                    <span className="font-mono text-sm font-bold text-[var(--primary)] w-6 text-center shrink-0">{indexToVar(i)}</span>
                     <input
                       value={inp.label}
                       onChange={(e) => {
@@ -483,7 +483,7 @@ export default function AdminMetricsPage() {
       <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
         <div className="flex items-center gap-3">
           <button onClick={() => router.push("/")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-          <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">Metrics</h1>
+          <h1 className="font-headline text-lg text-[var(--foreground)]">Metrics</h1>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setView("stations")} className="flex items-center gap-1.5 h-10 px-3 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer" title="Edit Stations">
@@ -502,7 +502,7 @@ export default function AdminMetricsPage() {
               <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditMetric(metric)}>
                 <div className="flex items-center gap-2">
                   <span className="font-primary text-sm font-semibold text-[var(--foreground)]">{metric.name}</span>
-                  <span className="font-primary text-xs text-[var(--muted-foreground)]">{metric.acronym}</span>
+                  <span className="font-mono text-xs text-[var(--muted-foreground)]">{metric.acronym}</span>
                 </div>
                 <div className="font-secondary text-xs text-[var(--muted-foreground)] mt-0.5">
                   {categories.find((c) => c.toLowerCase() === metric.category) || metric.category}

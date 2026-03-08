@@ -222,7 +222,7 @@ function StationContent() {
         <button onClick={() => router.push("/")} className="cursor-pointer">
           <ArrowLeft size={24} className="text-[var(--foreground)]" />
         </button>
-        <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
+        <h1 className="font-headline text-lg text-[var(--foreground)]">
           {stationName}
         </h1>
         <button onClick={() => setShowInfo(!showInfo)} className="cursor-pointer">
@@ -247,7 +247,7 @@ function StationContent() {
         <div className="flex flex-col gap-4 p-5 bg-[var(--card)] border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-full bg-[var(--secondary)] flex items-center justify-center">
-              <span className="font-primary text-base font-semibold text-[var(--secondary-foreground)]">
+              <span className="font-mono text-base font-semibold text-[var(--secondary-foreground)]">
                 {selectedAthlete.firstName[0]}{selectedAthlete.lastName[0]}
               </span>
             </div>
@@ -271,7 +271,7 @@ function StationContent() {
                   const key = indexToVar(i);
                   return (
                     <div key={key} className="flex items-center gap-2">
-                      <span className="font-primary text-xs font-bold text-[var(--primary)] w-16 shrink-0 truncate">
+                      <span className="font-mono text-xs font-bold text-[var(--primary)] w-16 shrink-0 truncate">
                         {inp.label || key}
                       </span>
                       <div className="flex-1 flex items-center gap-2 h-12 rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] px-4 overflow-hidden">
@@ -282,7 +282,7 @@ function StationContent() {
                           value={subValues[key] || ""}
                           onChange={(e) => setSubValues(prev => ({ ...prev, [key]: e.target.value }))}
                           placeholder="0.00"
-                          className="flex-1 min-w-0 bg-transparent font-primary text-lg font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          className="flex-1 min-w-0 bg-transparent font-mono text-lg font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
                     </div>
@@ -293,7 +293,7 @@ function StationContent() {
                 <span className="font-secondary text-sm text-[var(--muted-foreground)]">
                   Result {assignedMetric?.formula ? `(${assignedMetric.formula})` : "(sum)"}
                 </span>
-                <span className="font-primary text-2xl font-bold text-[var(--foreground)]">
+                <span className="font-mono text-2xl font-bold text-[var(--foreground)]">
                   {computedResult !== null ? (Number.isInteger(computedResult) ? computedResult : computedResult.toFixed(2)) : "—"}
                 </span>
               </div>
@@ -307,7 +307,7 @@ function StationContent() {
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 placeholder="0.00"
-                className="flex-1 min-w-0 bg-transparent font-primary text-3xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="flex-1 min-w-0 bg-transparent font-mono text-3xl font-bold text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
               <span className="font-secondary text-sm text-[var(--muted-foreground)] shrink-0">
                 {assignedMetric?.acronym || stationId.toUpperCase()}
@@ -356,14 +356,14 @@ function StationContent() {
               return (
                 <div key={grade} className="flex border-t border-[var(--border)]">
                   <div className="w-12 px-2 py-1.5 flex items-center">
-                    <span className="font-primary text-xs font-semibold text-[var(--foreground)]">
+                    <span className="font-mono text-xs font-semibold text-[var(--foreground)]">
                       {GRADE_LABELS[grade]}
                     </span>
                   </div>
                   <div className="flex-1 px-2 py-1.5">
                     {male ? (
                       <div>
-                        <span className="font-primary text-sm font-bold text-[var(--foreground)]">{male.value}</span>
+                        <span className="font-mono text-sm font-bold text-[var(--foreground)]">{male.value}</span>
                         <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">{male.name}</span>
                       </div>
                     ) : (
@@ -373,7 +373,7 @@ function StationContent() {
                   <div className="flex-1 px-2 py-1.5">
                     {female ? (
                       <div>
-                        <span className="font-primary text-sm font-bold text-[var(--foreground)]">{female.value}</span>
+                        <span className="font-mono text-sm font-bold text-[var(--foreground)]">{female.value}</span>
                         <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">{female.name}</span>
                       </div>
                     ) : (
@@ -391,7 +391,7 @@ function StationContent() {
               <div className="flex-1 px-2 py-1.5">
                 {sessionStats.topMale ? (
                   <div>
-                    <span className="font-primary text-sm font-bold text-[var(--foreground)]">{sessionStats.topMale.value}</span>
+                    <span className="font-mono text-sm font-bold text-[var(--foreground)]">{sessionStats.topMale.value}</span>
                     <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">
                       {sessionStats.topMale.athlete!.firstName} {sessionStats.topMale.athlete!.lastName[0]}.
                     </span>
@@ -403,7 +403,7 @@ function StationContent() {
               <div className="flex-1 px-2 py-1.5">
                 {sessionStats.topFemale ? (
                   <div>
-                    <span className="font-primary text-sm font-bold text-[var(--foreground)]">{sessionStats.topFemale.value}</span>
+                    <span className="font-mono text-sm font-bold text-[var(--foreground)]">{sessionStats.topFemale.value}</span>
                     <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">
                       {sessionStats.topFemale.athlete!.firstName} {sessionStats.topFemale.athlete!.lastName[0]}.
                     </span>
@@ -426,7 +426,7 @@ function StationContent() {
                   <div className="flex-1 flex items-center gap-1.5 px-3 py-2 bg-[var(--color-success)] rounded-sm">
                     <TrendingUp size={14} className="text-[var(--color-success-foreground)] shrink-0" />
                     <div className="min-w-0">
-                      <span className="font-primary text-sm font-bold text-[var(--color-success-foreground)]">
+                      <span className="font-mono text-sm font-bold text-[var(--color-success-foreground)]">
                         +{sessionStats.topHighPct.pctChange!.toFixed(1)}%
                       </span>
                       <span className="font-secondary text-[10px] text-[var(--color-success-foreground)] ml-1 truncate">
@@ -439,7 +439,7 @@ function StationContent() {
                   <div className="flex-1 flex items-center gap-1.5 px-3 py-2 bg-[var(--color-error)] rounded-sm">
                     <TrendingDown size={14} className="text-[var(--color-error-foreground)] shrink-0" />
                     <div className="min-w-0">
-                      <span className="font-primary text-sm font-bold text-[var(--color-error-foreground)]">
+                      <span className="font-mono text-sm font-bold text-[var(--color-error-foreground)]">
                         {sessionStats.topLowPct.pctChange!.toFixed(1)}%
                       </span>
                       <span className="font-secondary text-[10px] text-[var(--color-error-foreground)] ml-1 truncate">
@@ -466,7 +466,7 @@ function StationContent() {
               className="flex-1 bg-transparent font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none"
             />
           </div>
-          <span className="font-primary text-xs font-semibold text-[var(--muted-foreground)]">
+          <span className="font-mono text-xs font-semibold text-[var(--muted-foreground)]">
             {completed}/{total}
           </span>
         </div>
@@ -497,7 +497,7 @@ function StationContent() {
                   }`}
                 >
                   <span
-                    className={`font-primary text-xs font-semibold ${
+                    className={`font-mono text-xs font-semibold ${
                       isSelected
                         ? "text-[var(--foreground)]"
                         : "text-[var(--secondary-foreground)]"
@@ -517,7 +517,7 @@ function StationContent() {
                 </span>
                 {isDone ? (
                   <>
-                    <span className="font-primary text-sm font-semibold text-[var(--color-success-foreground)]">
+                    <span className="font-mono text-sm font-semibold text-[var(--color-success-foreground)]">
                       {results[athlete.id]}
                     </span>
                     <Check size={16} className="text-[var(--color-success-foreground)]" />
@@ -525,7 +525,7 @@ function StationContent() {
                 ) : isSelected ? (
                   <Pencil size={16} className="text-[var(--primary-foreground)]" />
                 ) : (
-                  <span className="font-primary text-sm text-[var(--muted-foreground)]">
+                  <span className="font-mono text-sm text-[var(--muted-foreground)]">
                     —
                   </span>
                 )}

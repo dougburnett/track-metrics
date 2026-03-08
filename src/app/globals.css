@@ -10,7 +10,7 @@
 }
 
 :root {
-  --background: #F2F3F0;
+  --background: #ECEAE1;
   --foreground: #141F54;
   --card: #FFFFFF;
   --border: #CBCCC9;
@@ -54,11 +54,17 @@
     height: 100%;
   }
 
-  .font-primary {
+  .font-headline {
     font-family: "Quity", var(--font-host-grotesk), "Host Grotesk", sans-serif;
     text-transform: uppercase;
+    font-weight: 400;
   }
 
+  .font-mono {
+    font-family: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
+  }
+
+  .font-primary,
   .font-secondary {
     font-family: var(--font-host-grotesk), "Host Grotesk", sans-serif;
   }

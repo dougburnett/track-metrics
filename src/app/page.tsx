@@ -22,8 +22,8 @@ export default function Dashboard() {
     <div className="flex flex-col h-full bg-[var(--background)]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
-        <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
-          Track Metrics
+        <h1 className="font-headline text-lg text-[var(--foreground)]">
+          CHS Metrics
         </h1>
         <div className="flex items-center gap-3">
           {role === "super_admin" && (
@@ -52,9 +52,11 @@ export default function Dashboard() {
                   onClick={() => router.push(`/station?id=${station.id}`)}
                   className="flex flex-col gap-2 p-4 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
                 >
-                  <DynamicIcon name={station.icon} size={20} className="text-[var(--primary)]" />
+                  <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+                    <DynamicIcon name={station.icon} size={18} className="text-[var(--primary-foreground)]" />
+                  </div>
                   <div>
-                    <div className="font-primary text-sm font-semibold text-[var(--foreground)]">
+                    <div className="font-headline text-sm text-[var(--foreground)]">
                       {station.name}
                     </div>
                     <div className="font-secondary text-xs text-[var(--muted-foreground)]">
@@ -96,7 +98,7 @@ export default function Dashboard() {
                 className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--secondary)] transition-colors cursor-pointer text-left"
               >
                 <div className="w-9 h-9 rounded-full bg-[var(--secondary)] flex items-center justify-center shrink-0">
-                  <span className="font-primary text-xs font-semibold text-[var(--secondary-foreground)]">
+                  <span className="font-mono text-xs font-semibold text-[var(--secondary-foreground)]">
                     {athlete.firstName[0]}{athlete.lastName[0]}
                   </span>
                 </div>

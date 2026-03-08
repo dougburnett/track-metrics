@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
@@ -80,17 +81,15 @@ function LoginContent() {
   const subtitle = mode === "signin"
     ? "Record athletic performance in real time"
     : mode === "signup"
-    ? "Join your team on Track Metrics"
+    ? "Join your team on CHS App"
     : "Enter your email to receive a reset link";
 
   return (
-    <div className="flex h-full items-center justify-center bg-[var(--background)] px-6">
+    <div className="flex h-full items-start justify-center bg-[var(--background)] px-6 pt-[15vh]">
       <div className="w-full max-w-[390px] flex flex-col items-center gap-8">
         <div className="flex flex-col items-center gap-2">
-          <div className="w-12 h-12 rounded-full bg-[var(--primary)] flex items-center justify-center">
-            <span className="font-primary text-[var(--primary-foreground)] text-xl font-bold">TM</span>
-          </div>
-          <h1 className="font-primary text-2xl font-bold text-[var(--foreground)]">Track Metrics</h1>
+          <Image src="/logo.png" alt="Canby Cougars" width={72} height={72} className="w-[72px] h-[72px]" />
+          <h1 className="font-headline text-2xl text-[var(--foreground)]">CHS App</h1>
           <p className="font-secondary text-sm text-[var(--muted-foreground)]">{subtitle}</p>
         </div>
 

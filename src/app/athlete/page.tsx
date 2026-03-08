@@ -137,7 +137,7 @@ function AthleteContent() {
           <button onClick={() => router.push("/")} className="cursor-pointer">
             <ArrowLeft size={24} className="text-[var(--foreground)]" />
           </button>
-          <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
+          <h1 className="font-headline text-lg text-[var(--foreground)]">
             Athlete Not Found
           </h1>
         </div>
@@ -157,7 +157,7 @@ function AthleteContent() {
         <button onClick={() => router.push("/")} className="cursor-pointer">
           <ArrowLeft size={24} className="text-[var(--foreground)]" />
         </button>
-        <h1 className="font-primary text-lg font-semibold text-[var(--foreground)]">
+        <h1 className="font-headline text-lg text-[var(--foreground)]">
           {athlete.firstName} {athlete.lastName}
         </h1>
       </div>
@@ -166,7 +166,7 @@ function AthleteContent() {
         {/* Athlete Info */}
         <div className="flex items-center gap-4 p-5 bg-[var(--card)] border-b border-[var(--border)]">
           <div className="w-14 h-14 rounded-full bg-[var(--primary)] flex items-center justify-center">
-            <span className="font-primary text-xl font-bold text-[var(--primary-foreground)]">
+            <span className="font-mono text-xl font-bold text-[var(--primary-foreground)]">
               {athlete.firstName[0]}{athlete.lastName[0]}
             </span>
           </div>
@@ -216,7 +216,7 @@ function AthleteContent() {
                       {s.metricName}
                     </div>
                     <div className="flex items-baseline gap-2">
-                      <span className="font-primary text-2xl font-bold text-[var(--foreground)]">
+                      <span className="font-mono text-2xl font-bold text-[var(--foreground)]">
                         {s.latest}
                       </span>
                       {s.unit && (
@@ -235,7 +235,7 @@ function AthleteContent() {
                           <Minus size={14} className="text-[var(--muted-foreground)]" />
                         )}
                         <span
-                          className={`font-primary text-xs font-semibold ${
+                          className={`font-mono text-xs font-semibold ${
                             s.pctChange > 0
                               ? "text-[var(--color-success-foreground)]"
                               : s.pctChange < 0
@@ -286,7 +286,7 @@ function AthleteContent() {
                           <span className="font-secondary text-sm font-medium text-[var(--foreground)]">
                             {s.metricName}
                           </span>
-                          <span className="font-primary text-xs text-[var(--muted-foreground)]">
+                          <span className="font-mono text-xs text-[var(--muted-foreground)]">
                             {s.acronym}
                           </span>
                         </div>
@@ -298,7 +298,7 @@ function AthleteContent() {
                             >
                               {slot ? (
                                 <>
-                                  <span className="font-primary text-[9px] sm:text-[10px] text-[var(--foreground)] mb-0.5 leading-none">
+                                  <span className="font-mono text-[9px] sm:text-[10px] text-[var(--foreground)] mb-0.5 leading-none">
                                     {slot.value}
                                   </span>
                                   <div
@@ -379,10 +379,10 @@ function AthleteContent() {
                           day: "numeric",
                         })}
                       </span>
-                      <span className="flex-1 font-secondary text-sm font-medium text-[var(--foreground)]">
+                      <span className="flex-1 font-mono text-sm font-medium text-[var(--foreground)]">
                         {r.metricAcronym}
                       </span>
-                      <span className="w-20 text-right font-primary text-sm font-semibold text-[var(--foreground)]">
+                      <span className="w-20 text-right font-mono text-sm font-semibold text-[var(--foreground)]">
                         {r.value}
                         {r.subValues && (
                           <span className="block font-secondary text-[9px] text-[var(--muted-foreground)] font-normal">
@@ -391,7 +391,7 @@ function AthleteContent() {
                         )}
                       </span>
                       <span
-                        className={`w-16 text-right font-primary text-xs font-semibold ${
+                        className={`w-16 text-right font-mono text-xs font-semibold ${
                           pct === null
                             ? "text-[var(--muted-foreground)]"
                             : pct > 0
