@@ -102,7 +102,7 @@ function AthleteContent() {
         pctChange,
         unit: latest.unit,
         history: entries
-          .slice(0, 8)
+          .slice(0, 20)
           .reverse()
           .map((e) => ({
             value: e.value,
@@ -254,7 +254,7 @@ function AthleteContent() {
               </div>
             </div>
 
-            {/* Bar Charts */}
+            {/* Vertical Bar Charts */}
             <div className="px-4 pb-3">
               <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
                 Progress
@@ -264,6 +264,17 @@ function AthleteContent() {
                   .filter((s) => s.history.length > 1)
                   .map((s) => {
                     const maxVal = Math.max(...s.history.map((h) => h.value));
+                    const minSlots = 5;
+                    const maxSlots = 20;
+                    const slotCount = Math.max(minSlots, Math.min(maxSlots, s.history.length));
+                    const slots: ({ value: number; date: string } | null)[] = [];
+                    // Pad with empty slots at the start if fewer than minSlots
+                    for (let i = 0; i < slotCount - s.history.length; i++) {
+                      slots.push(null);
+                    }
+                    // Add actual data (already chronological)
+                    s.history.slice(-maxSlots).forEach((h) => slots.push(h));
+
                     return (
                       <div
                         key={s.metricId}
@@ -277,22 +288,40 @@ function AthleteContent() {
                             {s.acronym}
                           </span>
                         </div>
-                        <div className="flex flex-col gap-1.5">
-                          {s.history.map((h, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <span className="font-secondary text-[10px] text-[var(--muted-foreground)] w-10 shrink-0">
-                                {h.date}
-                              </span>
-                              <div className="flex-1 h-5 bg-[var(--secondary)] rounded-sm overflow-hidden">
-                                <div
-                                  className="h-full bg-[var(--primary)] rounded-sm transition-all"
-                                  style={{
-                                    width: `${maxVal > 0 ? (h.value / maxVal) * 100 : 0}%`,
-                                  }}
-                                />
-                              </div>
-                              <span className="font-primary text-xs text-[var(--foreground)] w-12 text-right">
-                                {h.value}
+                        <div className="flex items-end gap-[2px] sm:gap-1 h-32">
+                          {slots.map((slot, i) => (
+                            <div
+                              key={i}
+                              className="flex-1 min-w-[12px] max-w-[32px] flex flex-col items-center justify-end h-full"
+                            >
+                              {slot ? (
+                                <>
+                                  <span className="font-primary text-[9px] sm:text-[10px] text-[var(--foreground)] mb-0.5 leading-none">
+                                    {slot.value}
+                                  </span>
+                                  <div
+                                    className="w-full bg-[var(--primary)] rounded-t-sm transition-all"
+                                    style={{
+                                      height: `${maxVal > 0 ? (slot.value / maxVal) * 100 : 0}%`,
+                                      minHeight: "4px",
+                                    }}
+                                  />
+                                </>
+                              ) : (
+                                <div className="w-full h-1 bg-[var(--secondary)] rounded-sm" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {/* Date labels */}
+                        <div className="flex gap-[2px] sm:gap-1 mt-1">
+                          {slots.map((slot, i) => (
+                            <div
+                              key={i}
+                              className="flex-1 min-w-[12px] max-w-[32px] text-center"
+                            >
+                              <span className="font-secondary text-[8px] sm:text-[9px] text-[var(--muted-foreground)] leading-none">
+                                {slot?.date?.replace(/\s/, "\n") || ""}
                               </span>
                             </div>
                           ))}

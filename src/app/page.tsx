@@ -38,21 +38,8 @@ export default function Dashboard() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        {/* Search */}
-        <div className="px-4 py-3">
-          <div className="flex items-center gap-2 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-pill)] px-4 h-10">
-            <Search size={16} className="text-[var(--muted-foreground)]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search athletes..."
-              className="flex-1 bg-transparent font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none"
-            />
-          </div>
-        </div>
-
         {/* Station Selector */}
-        <div className="px-4 pb-4">
+        <div className="px-4 pt-4 pb-4">
           <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
             Stations
           </h2>
@@ -85,11 +72,22 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Athletes */}
+        {/* Sticky Search + Athletes */}
         <div className="px-4 pb-6">
-          <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
-            Athletes ({filteredAthletes.length})
-          </h2>
+          <div className="sticky top-0 z-10 bg-[var(--background)] pb-3 pt-1">
+            <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
+              Athletes ({filteredAthletes.length})
+            </h2>
+            <div className="flex items-center gap-2 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-pill)] px-4 h-10">
+              <Search size={16} className="text-[var(--muted-foreground)]" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search athletes..."
+                className="flex-1 bg-transparent font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none"
+              />
+            </div>
+          </div>
           <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
             {filteredAthletes.map((athlete) => (
               <button
