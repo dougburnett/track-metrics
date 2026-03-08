@@ -27,6 +27,14 @@ export interface Metric {
   drills: string;
 }
 
+export interface Athlete {
+  id: string;
+  firstName: string;
+  lastName: string;
+  grade: number;
+  gender: string;
+}
+
 // --- Icon list ---
 
 export const AVAILABLE_ICONS = [
@@ -43,6 +51,7 @@ interface StoreContextType {
   setStations: React.Dispatch<React.SetStateAction<Station[]>>;
   metrics: Metric[];
   setMetrics: React.Dispatch<React.SetStateAction<Metric[]>>;
+  athletes: Athlete[];
   categories: string[];
   setCategories: React.Dispatch<React.SetStateAction<string[]>>;
   loading: boolean;
@@ -62,6 +71,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const [stations, setStations] = useState<Station[]>([]);
   const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const loaded = useRef(false);
@@ -77,15 +87,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loaded.current = true;
 
     async function load() {
-      const [catRes, staRes, metRes] = await Promise.all([
+      const [catRes, staRes, metRes, athRes] = await Promise.all([
         supabase.from("categories").select("*").order("name"),
         supabase.from("stations").select("*").order("sort_order"),
         supabase.from("metrics").select("*"),
+        supabase.from("athletes").select("*").order("last_name"),
       ]);
 
       const cats = catRes.data || [];
       const stas = staRes.data || [];
       const mets = metRes.data || [];
+      const aths = athRes.data || [];
 
       const catMap: Record<string, string> = {};
       cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
@@ -109,6 +121,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         measurementRules: m.measurement_rules,
         gear: m.gear,
         drills: m.drills,
+      })));
+      setAthletes(aths.map((a: { id: string; first_name: string; last_name: string; grade: number; gender: string }) => ({
+        id: a.id,
+        firstName: a.first_name,
+        lastName: a.last_name,
+        grade: a.grade,
+        gender: a.gender,
       })));
       setLoading(false);
     }
@@ -223,6 +242,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     <StoreContext.Provider value={{
       stations, setStations,
       metrics, setMetrics,
+      athletes,
       categories, setCategories,
       loading,
       saveStation, deleteStation,

@@ -6,23 +6,12 @@ import { ArrowLeft, Info, Search, Check, Pencil, Undo2, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
 
-const athletes = [
-  { id: 1, name: "Alex Smith", initials: "AS", age: 17, events: "Sprints" },
-  { id: 2, name: "Maria Rodriguez", initials: "MR", age: 16, events: "Jumps" },
-  { id: 3, name: "Jordan Davis", initials: "JD", age: 16, events: "Sprints" },
-  { id: 4, name: "Tyler Washington", initials: "TW", age: 15, events: "Distance" },
-  { id: 5, name: "Sarah Johnson", initials: "SJ", age: 17, events: "Sprints" },
-  { id: 6, name: "Kevin Lee", initials: "KL", age: 16, events: "Throws" },
-  { id: 7, name: "Emma Parker", initials: "EP", age: 15, events: "Jumps" },
-  { id: 8, name: "Derek Martinez", initials: "DM", age: 17, events: "Sprints" },
-];
-
 function StationContent() {
   const router = useRouter();
   const params = useSearchParams();
   const stationId = params.get("id") || "rsi";
   const inputRef = useRef<HTMLInputElement>(null);
-  const { stations, metrics } = useStore();
+  const { stations, metrics, athletes } = useStore();
   const { role } = useAuth();
   const canRecord = role === "super_admin" || role === "admin";
 
@@ -33,9 +22,9 @@ function StationContent() {
     ? `${assignedMetric.measurementRules} · ${assignedMetric.gear}`
     : station?.description || "Follow standard protocol";
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [value, setValue] = useState("");
-  const [results, setResults] = useState<Record<number, string>>({});
+  const [results, setResults] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [showInfo, setShowInfo] = useState(false);
 
@@ -48,7 +37,7 @@ function StationContent() {
     }
   }, [selectedId]);
 
-  const handleSelect = (id: number) => {
+  const handleSelect = (id: string) => {
     if (results[id]) return;
     setSelectedId(id);
     setValue("");
@@ -67,9 +56,10 @@ function StationContent() {
     setValue("");
   };
 
-  const filteredAthletes = athletes.filter((a) =>
-    a.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredAthletes = athletes.filter((a) => {
+    const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
+    return fullName.includes(search.toLowerCase());
+  });
 
   const selectedAthlete = athletes.find((a) => a.id === selectedId);
 
@@ -106,15 +96,15 @@ function StationContent() {
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-full bg-[var(--secondary)] flex items-center justify-center">
               <span className="font-primary text-base font-semibold text-[var(--secondary-foreground)]">
-                {selectedAthlete.initials}
+                {selectedAthlete.firstName[0]}{selectedAthlete.lastName[0]}
               </span>
             </div>
             <div className="flex-1">
               <div className="font-primary text-base font-semibold text-[var(--foreground)]">
-                {selectedAthlete.name}
+                {selectedAthlete.firstName} {selectedAthlete.lastName}
               </div>
               <div className="font-secondary text-xs text-[var(--muted-foreground)]">
-                Age {selectedAthlete.age} · {selectedAthlete.events}
+                Grade {selectedAthlete.grade} · {selectedAthlete.gender === "M" ? "Male" : "Female"}
               </div>
             </div>
             <button onClick={handleUndo} className="cursor-pointer">
@@ -196,7 +186,7 @@ function StationContent() {
                         : "text-[var(--secondary-foreground)]"
                     }`}
                   >
-                    {athlete.initials}
+                    {athlete.firstName[0]}{athlete.lastName[0]}
                   </span>
                 </div>
                 <span
@@ -206,7 +196,7 @@ function StationContent() {
                       : "text-[var(--foreground)]"
                   }`}
                 >
-                  {athlete.name}
+                  {athlete.firstName} {athlete.lastName}
                 </span>
                 {isDone ? (
                   <>

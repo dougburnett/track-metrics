@@ -1,29 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Search, User, Settings, LogOut } from "lucide-react";
+import { Search, Settings, LogOut } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
 import { DynamicIcon } from "@/components/DynamicIcon";
 
-const recentAthletes = [
-  { id: 1, name: "Alex Smith", initials: "AS", lastMetric: "RSI", value: "2.31" },
-  { id: 2, name: "Maria Rodriguez", initials: "MR", lastMetric: "Sprint 40m", value: "5.12s" },
-  { id: 3, name: "Jordan Davis", initials: "JD", lastMetric: "Vertical", value: '32"' },
-  { id: 4, name: "Tyler Washington", initials: "TW", lastMetric: "Balance", value: "45s" },
-  { id: 5, name: "Sarah Johnson", initials: "SJ", lastMetric: "RSI", value: "1.98" },
-];
-
 export default function Dashboard() {
   const router = useRouter();
-  const { stations, metrics, loading } = useStore();
+  const { stations, metrics, athletes, loading } = useStore();
   const { role, signOut } = useAuth();
   const [search, setSearch] = useState("");
 
-  const filteredAthletes = recentAthletes.filter((a) =>
-    a.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredAthletes = athletes.filter((a) => {
+    const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
+    return fullName.includes(search.toLowerCase());
+  });
 
   return (
     <div className="flex flex-col h-full bg-[var(--background)]">
@@ -92,10 +85,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Athletes */}
+        {/* Athletes */}
         <div className="px-4 pb-6">
           <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
-            Recent Athletes
+            Athletes ({filteredAthletes.length})
           </h2>
           <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
             {filteredAthletes.map((athlete) => (
@@ -106,20 +99,17 @@ export default function Dashboard() {
               >
                 <div className="w-9 h-9 rounded-full bg-[var(--secondary)] flex items-center justify-center shrink-0">
                   <span className="font-primary text-xs font-semibold text-[var(--secondary-foreground)]">
-                    {athlete.initials}
+                    {athlete.firstName[0]}{athlete.lastName[0]}
                   </span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-secondary text-sm font-medium text-[var(--foreground)]">
-                    {athlete.name}
+                    {athlete.firstName} {athlete.lastName}
                   </div>
                   <div className="font-secondary text-xs text-[var(--muted-foreground)]">
-                    {athlete.lastMetric}
+                    Grade {athlete.grade} · {athlete.gender === "M" ? "Male" : "Female"}
                   </div>
                 </div>
-                <span className="font-primary text-sm font-semibold text-[var(--foreground)]">
-                  {athlete.value}
-                </span>
               </button>
             ))}
           </div>
