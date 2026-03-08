@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { createClient } from "./supabase";
+import { useAuth } from "./auth-context";
 
 // --- Types ---
 
@@ -58,21 +59,24 @@ const StoreContext = createContext<StoreContextType | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const supabase = createClient();
+  const { user, loading: authLoading } = useAuth();
   const [stations, setStations] = useState<Station[]>([]);
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const loaded = useRef(false);
 
-  // Load from Supabase once authenticated
+  // Load from Supabase once auth is ready and user exists
   useEffect(() => {
-    async function load() {
-      // Wait for auth session before querying (RLS requires authenticated user)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setLoading(false);
-        return;
-      }
+    if (authLoading) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    if (loaded.current) return;
+    loaded.current = true;
 
+    async function load() {
       const [catRes, staRes, metRes] = await Promise.all([
         supabase.from("categories").select("*").order("name"),
         supabase.from("stations").select("*").order("sort_order"),
@@ -83,7 +87,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const stas = staRes.data || [];
       const mets = metRes.data || [];
 
-      // Build category lookup: uuid -> name
       const catMap: Record<string, string> = {};
       cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
 
@@ -110,16 +113,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
 
-    // Load immediately and also reload when auth state changes
     load();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        setLoading(true);
-        load();
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+  }, [authLoading, user]);
 
   // --- Station CRUD ---
   const saveStation = useCallback(async (station: Station) => {
