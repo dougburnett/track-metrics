@@ -63,9 +63,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Load from Supabase on mount
+  // Load from Supabase once authenticated
   useEffect(() => {
     async function load() {
+      // Wait for auth session before querying (RLS requires authenticated user)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setLoading(false);
+        return;
+      }
+
       const [catRes, staRes, metRes] = await Promise.all([
         supabase.from("categories").select("*").order("name"),
         supabase.from("stations").select("*").order("sort_order"),
@@ -102,7 +109,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })));
       setLoading(false);
     }
+
+    // Load immediately and also reload when auth state changes
     load();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setLoading(true);
+        load();
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   // --- Station CRUD ---
