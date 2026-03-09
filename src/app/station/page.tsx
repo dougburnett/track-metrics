@@ -150,13 +150,17 @@ function StationContent() {
       setBaselines(prev);
     }
 
-    // Load from cache first for instant display
+    // Load from cache if fresh (< 5 min old)
+    const tsKey = `${cacheKey}-ts`;
     try {
       const cached = localStorage.getItem(cacheKey);
-      if (cached) processData(JSON.parse(cached));
+      const cachedTs = Number(localStorage.getItem(tsKey) || 0);
+      if (cached && Date.now() - cachedTs < 5 * 60 * 1000) {
+        processData(JSON.parse(cached));
+      }
     } catch {}
 
-    // Fetch fresh data in background
+    // Always fetch fresh data
     (async () => {
       const { data } = await supabase
         .from("results")
@@ -166,7 +170,10 @@ function StationContent() {
 
       if (data) {
         processData(data as ResultRow[]);
-        try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+          localStorage.setItem(tsKey, String(Date.now()));
+        } catch {}
       }
     })();
   }, [station?.metricIds.join(",")]);
@@ -206,6 +213,28 @@ function StationContent() {
     const metricId = selectedMetricId;
     const existingResultId = resultIds[selectedId];
 
+    const insertResult = async (val: number, extras?: Record<string, unknown>) => {
+      const { data } = await supabase.from("results").insert({
+        athlete_id: selectedId,
+        metric_id: metricId,
+        value: val,
+        unit: assignedMetric?.acronym || "",
+        ...extras,
+      }).select("id").maybeSingle();
+      return data?.id || null;
+    };
+
+    const updateOrInsert = async (val: number, extras?: Record<string, unknown>) => {
+      if (existingResultId) {
+        const { data: updated } = await supabase.from("results")
+          .update({ value: val, ...extras })
+          .eq("id", existingResultId)
+          .select("id").maybeSingle();
+        if (updated) return existingResultId;
+      }
+      return insertResult(val, extras);
+    };
+
     try {
       if (isMultiInput && computedResult !== null) {
         const numericSubValues: Record<string, number> = {};
@@ -213,73 +242,31 @@ function StationContent() {
           const key = indexToVar(i);
           numericSubValues[key] = parseFloat(subValues[key]);
         });
-        if (existingResultId) {
-          await supabase.from("results").update({
-            value: computedResult,
-            sub_values: numericSubValues,
-          }).eq("id", existingResultId);
-        } else {
-          const { data } = await supabase.from("results").insert({
-            athlete_id: selectedId,
-            metric_id: metricId,
-            value: computedResult,
-            unit: assignedMetric?.acronym || "",
-            sub_values: numericSubValues,
-          }).select("id").maybeSingle();
-          if (data) {
-            setAllResults(prev => ({
-              ...prev,
-              [metricId]: {
-                ...(prev[metricId] || {}),
-                [selectedId]: { value: String(computedResult), resultId: data.id },
-              },
-            }));
-            updateAllTime(metricId, selectedId, computedResult, data.id);
-          }
-        }
-        if (existingResultId) {
+        const savedId = await updateOrInsert(computedResult, { sub_values: numericSubValues });
+        if (savedId) {
           const displayVal = Number.isInteger(computedResult) ? String(computedResult) : computedResult.toFixed(2);
           setAllResults(prev => ({
             ...prev,
             [metricId]: {
               ...(prev[metricId] || {}),
-              [selectedId]: { value: displayVal, resultId: existingResultId },
+              [selectedId]: { value: displayVal, resultId: savedId },
             },
           }));
-          updateAllTime(metricId, selectedId, computedResult, existingResultId);
+          updateAllTime(metricId, selectedId, computedResult, savedId);
         }
         setSelectedId(null);
         setSubValues({});
       } else if (value) {
-        if (existingResultId) {
-          await supabase.from("results").update({
-            value: parseFloat(value),
-          }).eq("id", existingResultId);
+        const savedId = await updateOrInsert(parseFloat(value));
+        if (savedId) {
           setAllResults(prev => ({
             ...prev,
             [metricId]: {
               ...(prev[metricId] || {}),
-              [selectedId]: { value, resultId: existingResultId },
+              [selectedId]: { value, resultId: savedId },
             },
           }));
-          updateAllTime(metricId, selectedId, parseFloat(value), existingResultId);
-        } else {
-          const { data } = await supabase.from("results").insert({
-            athlete_id: selectedId,
-            metric_id: metricId,
-            value: parseFloat(value),
-            unit: assignedMetric?.acronym || "",
-          }).select("id").maybeSingle();
-          if (data) {
-            setAllResults(prev => ({
-              ...prev,
-              [metricId]: {
-                ...(prev[metricId] || {}),
-                [selectedId]: { value, resultId: data.id },
-              },
-            }));
-            updateAllTime(metricId, selectedId, parseFloat(value), data.id);
-          }
+          updateAllTime(metricId, selectedId, parseFloat(value), savedId);
         }
         setSelectedId(null);
         setValue("");
