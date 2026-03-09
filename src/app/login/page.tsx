@@ -42,20 +42,23 @@ function LoginContent() {
     e.preventDefault();
     setError(""); setMessage("");
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: { full_name: fullName },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
     if (error) {
       setError(error.message);
+      setLoading(false);
+    } else if (data.session) {
+      router.push("/");
+      router.refresh();
     } else {
       setMessage("Check your email to confirm your account.");
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
