@@ -13,7 +13,7 @@ export interface Station {
   icon: string;
   description: string;
   location: string;
-  metricId: string; // uuid of assigned metric
+  metricIds: string[];
 }
 
 export interface MetricInput {
@@ -70,6 +70,8 @@ interface StoreContextType {
   deleteStation: (id: string) => Promise<void>;
   saveMetric: (metric: Metric) => Promise<void>;
   deleteMetric: (id: string) => Promise<void>;
+  saveAthlete: (athlete: Athlete) => Promise<void>;
+  deleteAthlete: (id: string) => Promise<void>;
   addCategory: (name: string) => Promise<void>;
   renameCategory: (oldName: string, newName: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
@@ -108,12 +110,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loadedForUser.current = user.id;
 
     async function load() {
-      const [catRes, staRes, metRes, athRes, unitRes] = await Promise.all([
+      const [catRes, staRes, metRes, athRes, unitRes, smRes] = await Promise.all([
         supabase.from("categories").select("*").order("name"),
         supabase.from("stations").select("*").order("sort_order"),
         supabase.from("metrics").select("*"),
         supabase.from("athletes").select("*").order("first_name"),
         supabase.from("units").select("*").order("name"),
+        supabase.from("station_metrics").select("*").order("sort_order"),
       ]);
 
       if (catRes.error) console.error("categories error:", catRes.error);
@@ -121,26 +124,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (metRes.error) console.error("metrics error:", metRes.error);
       if (athRes.error) console.error("athletes error:", athRes.error);
       if (unitRes.error) console.error("units error:", unitRes.error);
+      if (smRes.error) console.error("station_metrics error:", smRes.error);
 
       const cats = catRes.data || [];
       const stas = staRes.data || [];
       const mets = metRes.data || [];
       const aths = athRes.data || [];
       const uns = unitRes.data || [];
+      const sms = smRes.data || [];
+
+      // Build station_id -> metric_ids map
+      const stationMetricMap: Record<string, string[]> = {};
+      sms.forEach((sm: { station_id: string; metric_id: string }) => {
+        if (!stationMetricMap[sm.station_id]) stationMetricMap[sm.station_id] = [];
+        stationMetricMap[sm.station_id].push(sm.metric_id);
+      });
 
       const catMap: Record<string, string> = {};
       cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
 
       setCategories(cats.map((c: { name: string }) => c.name));
       setUnits(uns.map((u: { name: string }) => u.name));
-      setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string; location: string; metric_id: string | null }) => ({
+      setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string; location: string }) => ({
         id: s.slug,
         slug: s.slug,
         name: s.name,
         icon: s.icon,
         description: s.description,
         location: s.location || "",
-        metricId: s.metric_id || "",
+        metricIds: stationMetricMap[s.id] || [],
       })));
       setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; instructions: string; measurement_rules: string; gear: string; drills: string; lower_is_better: boolean; min_value: number | null; max_value: number | null; unit: string; inputs: MetricInput[] | null; formula: string }) => ({
         id: m.id,
@@ -175,29 +187,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const saveStation = useCallback(async (station: Station) => {
     const slug = station.id;
 
-    // Resolve metric_id: if metricId is set, use it directly (it's already a UUID)
-    const metricId = station.metricId || null;
-
     const { data: existing } = await supabase.from("stations").select("id").eq("slug", slug).maybeSingle();
+    let stationUuid: string;
     if (existing) {
+      stationUuid = existing.id;
       await supabase.from("stations").update({
         name: station.name,
         icon: station.icon,
         description: station.description,
         location: station.location,
-        metric_id: metricId,
-      }).eq("id", existing.id);
+      }).eq("id", stationUuid);
     } else {
-      await supabase.from("stations").insert({
+      const { data } = await supabase.from("stations").insert({
         slug,
         name: station.name,
         icon: station.icon,
         description: station.description,
         location: station.location,
-        metric_id: metricId,
         sort_order: 99,
-      });
+      }).select("id").maybeSingle();
+      stationUuid = data?.id || "";
     }
+
+    // Sync station_metrics junction table
+    if (stationUuid) {
+      await supabase.from("station_metrics").delete().eq("station_id", stationUuid);
+      if (station.metricIds.length > 0) {
+        await supabase.from("station_metrics").insert(
+          station.metricIds.map((metricId, i) => ({
+            station_id: stationUuid,
+            metric_id: metricId,
+            sort_order: i,
+          }))
+        );
+      }
+    }
+
     setStations(prev => {
       const idx = prev.findIndex(s => s.id === station.id);
       if (idx >= 0) {
@@ -264,6 +289,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setMetrics(prev => prev.filter(m => m.id !== id));
   }, []);
 
+  // --- Athlete CRUD ---
+  const saveAthlete = useCallback(async (athlete: Athlete) => {
+    const row = {
+      first_name: athlete.firstName,
+      last_name: athlete.lastName,
+      grade: athlete.grade,
+      gender: athlete.gender,
+    };
+
+    const isUUID = athlete.id.includes("-") && athlete.id.length > 30;
+    if (isUUID) {
+      await supabase.from("athletes").update(row).eq("id", athlete.id);
+      setAthletes(prev => prev.map(a => a.id === athlete.id ? athlete : a));
+    } else {
+      const { data } = await supabase.from("athletes").insert(row).select("id").maybeSingle();
+      const newAthlete = { ...athlete, id: data?.id || athlete.id };
+      setAthletes(prev => {
+        const idx = prev.findIndex(a => a.id === athlete.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = newAthlete;
+          return next;
+        }
+        return [...prev, newAthlete];
+      });
+    }
+  }, []);
+
+  const deleteAthlete = useCallback(async (id: string) => {
+    await supabase.from("athletes").delete().eq("id", id);
+    setAthletes(prev => prev.filter(a => a.id !== id));
+  }, []);
+
   // --- Category CRUD ---
   const addCategory = useCallback(async (name: string) => {
     await supabase.from("categories").insert({ name });
@@ -306,6 +364,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loading,
       saveStation, deleteStation,
       saveMetric, deleteMetric,
+      saveAthlete, deleteAthlete,
       addCategory, renameCategory, deleteCategory,
       addUnit, renameUnit, deleteUnit,
     }}>

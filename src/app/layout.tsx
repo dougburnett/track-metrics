@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CHS Metrics",
+  title: "Canby Track Metrics",
   description: "Record athletic performance metrics in real time",
   icons: {
     icon: "/favicon.ico",
@@ -41,7 +41,11 @@ export default function RootLayout({
         className={`${hostGrotesk.variable} ${jetbrainsMono.variable} h-full antialiased font-secondary`}
       >
         <AuthProvider>
-          <StoreProvider>{children}</StoreProvider>
+          <StoreProvider>
+            <div className="mx-auto w-full max-w-2xl h-full">
+              {children}
+            </div>
+          </StoreProvider>
         </AuthProvider>
       </body>
     </html>

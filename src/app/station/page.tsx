@@ -7,8 +7,10 @@ import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase";
 import { evaluateFormula, indexToVar } from "@/lib/formula";
+import { Skeleton } from "@/components/Skeleton";
 
 const GRADE_LABELS: Record<number, string> = { 9: "Fr", 10: "So", 11: "Jr", 12: "Sr" };
+const fmtVal = (n: number) => parseFloat(n.toFixed(2));
 
 function StationContent() {
   const router = useRouter();
@@ -20,22 +22,62 @@ function StationContent() {
   const canRecord = role === "super_admin" || role === "admin";
 
   const station = stations.find(s => s.id === stationId);
-  const assignedMetric = station ? metrics.find(m => m.id === station.metricId) : null;
+  const assignedMetrics = station ? station.metricIds.map(id => metrics.find(m => m.id === id)).filter(Boolean) as typeof metrics : [];
+  const isMultiMetric = assignedMetrics.length > 1;
   const stationName = station?.name || "Station";
+
+  const [selectedMetricId, setSelectedMetricId] = useState<string>("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [value, setValue] = useState("");
+  const [subValues, setSubValues] = useState<Record<string, string>>({});
+  // allResults: { metricId: { athleteId: { value, resultId } } }
+  const [allResults, setAllResults] = useState<Record<string, Record<string, { value: string; resultId: string }>>>({});
+  const [search, setSearch] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [baselines, setBaselines] = useState<Record<string, number>>({});
+  const [genderTab, setGenderTab] = useState<"M" | "F">("M");
+  const [statsMode, setStatsMode] = useState<"today" | "allTime">(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("stationStatsMode") as "today" | "allTime") || "today";
+    }
+    return "today";
+  });
+  // allTimeResults: best-ever values per metric per athlete
+  const [allTimeResults, setAllTimeResults] = useState<Record<string, Record<string, { value: string; resultId: string }>>>({});
+
+  // Initialize selectedMetricId when metrics load
+  useEffect(() => {
+    if (assignedMetrics.length > 0 && !selectedMetricId) {
+      setSelectedMetricId(assignedMetrics[0].id);
+    }
+  }, [assignedMetrics, selectedMetricId]);
+
+  const assignedMetric = metrics.find(m => m.id === selectedMetricId) || assignedMetrics[0] || null;
+  const isMultiInput = !!(assignedMetric?.inputs && assignedMetric.inputs.length > 1);
+
   const stationInfoText = assignedMetric
     ? `${assignedMetric.measurementRules} · ${assignedMetric.gear}`
     : station?.description || "Follow standard protocol";
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [value, setValue] = useState("");
-  const [subValues, setSubValues] = useState<Record<string, string>>({});
-  const [results, setResults] = useState<Record<string, string>>({});
-  const [search, setSearch] = useState("");
-  const [showInfo, setShowInfo] = useState(false);
-  const [baselines, setBaselines] = useState<Record<string, number>>({});
-  const [genderTab, setGenderTab] = useState<"M" | "F">("M");
+  // Derived results for the currently selected metric
+  const results: Record<string, string> = useMemo(() => {
+    const metricResults = allResults[selectedMetricId] || {};
+    const out: Record<string, string> = {};
+    for (const [aid, r] of Object.entries(metricResults)) {
+      out[aid] = r.value;
+    }
+    return out;
+  }, [allResults, selectedMetricId]);
 
-  const isMultiInput = !!(assignedMetric?.inputs && assignedMetric.inputs.length > 1);
+  const resultIds: Record<string, string> = useMemo(() => {
+    const metricResults = allResults[selectedMetricId] || {};
+    const out: Record<string, string> = {};
+    for (const [aid, r] of Object.entries(metricResults)) {
+      out[aid] = r.resultId;
+    }
+    return out;
+  }, [allResults, selectedMetricId]);
 
   const computedResult = useMemo(() => {
     if (!isMultiInput || !assignedMetric?.inputs) return null;
@@ -63,46 +105,71 @@ function StationContent() {
   const completed = Object.keys(results).length;
   const total = athletes.length;
 
-  // Load today's results and baselines (pre-today) for this metric
+  // Load results for ALL assigned metrics (with localStorage cache)
   useEffect(() => {
-    if (!station?.metricId) return;
+    if (!station || station.metricIds.length === 0) return;
     const supabase = createClient();
+    const cacheKey = `station-results-${stationId}`;
 
-    async function loadData() {
+    type ResultRow = { id: string; athlete_id: string; metric_id: string; value: number; recorded_at: string };
+
+    function processData(data: ResultRow[]) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayISO = today.toISOString();
 
+      const allRes: Record<string, Record<string, { value: string; resultId: string }>> = {};
+      const allTimeBests: Record<string, Record<string, { value: string; resultId: string }>> = {};
+      const prev: Record<string, number> = {};
+
+      data.forEach((r) => {
+        const isToday = r.recorded_at >= todayISO;
+        if (isToday) {
+          if (!allRes[r.metric_id]) allRes[r.metric_id] = {};
+          if (!(r.athlete_id in allRes[r.metric_id])) {
+            allRes[r.metric_id][r.athlete_id] = { value: String(r.value), resultId: r.id };
+          }
+        } else {
+          if (r.metric_id === station!.metricIds[0] && !(r.athlete_id in prev)) {
+            prev[r.athlete_id] = Number(r.value);
+          }
+        }
+
+        // All-time bests: keep best value per metric per athlete
+        if (!allTimeBests[r.metric_id]) allTimeBests[r.metric_id] = {};
+        const existing = allTimeBests[r.metric_id][r.athlete_id];
+        const met = metrics.find(m => m.id === r.metric_id);
+        const lower = met?.lowerIsBetter ?? false;
+        if (!existing || (lower ? r.value < parseFloat(existing.value) : r.value > parseFloat(existing.value))) {
+          allTimeBests[r.metric_id][r.athlete_id] = { value: String(r.value), resultId: r.id };
+        }
+      });
+
+      setAllResults(allRes);
+      setAllTimeResults(allTimeBests);
+      setBaselines(prev);
+    }
+
+    // Load from cache first for instant display
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) processData(JSON.parse(cached));
+    } catch {}
+
+    // Fetch fresh data in background
+    (async () => {
       const { data } = await supabase
         .from("results")
-        .select("athlete_id, value, recorded_at")
-        .eq("metric_id", station!.metricId)
+        .select("id, athlete_id, metric_id, value, recorded_at")
+        .in("metric_id", station!.metricIds)
         .order("recorded_at", { ascending: false });
 
       if (data) {
-        const todayResults: Record<string, string> = {};
-        const prev: Record<string, number> = {};
-
-        data.forEach((r: { athlete_id: string; value: number; recorded_at: string }) => {
-          const isToday = r.recorded_at >= todayISO;
-          if (isToday) {
-            if (!(r.athlete_id in todayResults)) {
-              todayResults[r.athlete_id] = String(r.value);
-            }
-          } else {
-            if (!(r.athlete_id in prev)) {
-              prev[r.athlete_id] = Number(r.value);
-            }
-          }
-        });
-
-        setResults(todayResults);
-        setBaselines(prev);
+        processData(data as ResultRow[]);
+        try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
       }
-    }
-
-    loadData();
-  }, [station?.metricId]);
+    })();
+  }, [station?.metricIds.join(",")]);
 
   useEffect(() => {
     if (selectedId && inputRef.current) {
@@ -111,43 +178,114 @@ function StationContent() {
   }, [selectedId]);
 
   const handleSelect = (id: string) => {
-    if (results[id]) return;
     setSelectedId(id);
-    setValue("");
+    if (results[id]) {
+      setValue(results[id]);
+    } else {
+      setValue("");
+    }
+    setSubValues({});
+  };
+
+  const updateAllTime = (metricId: string, athleteId: string, numVal: number, resultId: string) => {
+    const valStr = Number.isInteger(numVal) ? String(numVal) : numVal.toFixed(2);
+    setAllTimeResults(prev => {
+      const existing = prev[metricId]?.[athleteId];
+      const lower = assignedMetric?.lowerIsBetter ?? false;
+      if (!existing || (lower ? numVal < parseFloat(existing.value) : numVal > parseFloat(existing.value))) {
+        return { ...prev, [metricId]: { ...(prev[metricId] || {}), [athleteId]: { value: valStr, resultId } } };
+      }
+      return prev;
+    });
   };
 
   const handleSave = async () => {
-    if (!selectedId || !station?.metricId) return;
+    if (!selectedId || !selectedMetricId || saving) return;
+    setSaving(true);
     const supabase = createClient();
-    const metricId = station.metricId;
+    const metricId = selectedMetricId;
+    const existingResultId = resultIds[selectedId];
 
-    if (isMultiInput && computedResult !== null) {
-      const numericSubValues: Record<string, number> = {};
-      assignedMetric!.inputs!.forEach((_, i) => {
-        const key = indexToVar(i);
-        numericSubValues[key] = parseFloat(subValues[key]);
-      });
-      await supabase.from("results").insert({
-        athlete_id: selectedId,
-        metric_id: metricId,
-        value: computedResult,
-        unit: assignedMetric?.acronym || "",
-        sub_values: numericSubValues,
-      });
-      const displayVal = Number.isInteger(computedResult) ? String(computedResult) : computedResult.toFixed(2);
-      setResults((prev) => ({ ...prev, [selectedId]: displayVal }));
-      setSelectedId(null);
-      setSubValues({});
-    } else if (value) {
-      await supabase.from("results").insert({
-        athlete_id: selectedId,
-        metric_id: metricId,
-        value: parseFloat(value),
-        unit: assignedMetric?.acronym || "",
-      });
-      setResults((prev) => ({ ...prev, [selectedId]: value }));
-      setSelectedId(null);
-      setValue("");
+    try {
+      if (isMultiInput && computedResult !== null) {
+        const numericSubValues: Record<string, number> = {};
+        assignedMetric!.inputs!.forEach((_, i) => {
+          const key = indexToVar(i);
+          numericSubValues[key] = parseFloat(subValues[key]);
+        });
+        if (existingResultId) {
+          await supabase.from("results").update({
+            value: computedResult,
+            sub_values: numericSubValues,
+          }).eq("id", existingResultId);
+        } else {
+          const { data } = await supabase.from("results").insert({
+            athlete_id: selectedId,
+            metric_id: metricId,
+            value: computedResult,
+            unit: assignedMetric?.acronym || "",
+            sub_values: numericSubValues,
+          }).select("id").maybeSingle();
+          if (data) {
+            setAllResults(prev => ({
+              ...prev,
+              [metricId]: {
+                ...(prev[metricId] || {}),
+                [selectedId]: { value: String(computedResult), resultId: data.id },
+              },
+            }));
+            updateAllTime(metricId, selectedId, computedResult, data.id);
+          }
+        }
+        if (existingResultId) {
+          const displayVal = Number.isInteger(computedResult) ? String(computedResult) : computedResult.toFixed(2);
+          setAllResults(prev => ({
+            ...prev,
+            [metricId]: {
+              ...(prev[metricId] || {}),
+              [selectedId]: { value: displayVal, resultId: existingResultId },
+            },
+          }));
+          updateAllTime(metricId, selectedId, computedResult, existingResultId);
+        }
+        setSelectedId(null);
+        setSubValues({});
+      } else if (value) {
+        if (existingResultId) {
+          await supabase.from("results").update({
+            value: parseFloat(value),
+          }).eq("id", existingResultId);
+          setAllResults(prev => ({
+            ...prev,
+            [metricId]: {
+              ...(prev[metricId] || {}),
+              [selectedId]: { value, resultId: existingResultId },
+            },
+          }));
+          updateAllTime(metricId, selectedId, parseFloat(value), existingResultId);
+        } else {
+          const { data } = await supabase.from("results").insert({
+            athlete_id: selectedId,
+            metric_id: metricId,
+            value: parseFloat(value),
+            unit: assignedMetric?.acronym || "",
+          }).select("id").maybeSingle();
+          if (data) {
+            setAllResults(prev => ({
+              ...prev,
+              [metricId]: {
+                ...(prev[metricId] || {}),
+                [selectedId]: { value, resultId: data.id },
+              },
+            }));
+            updateAllTime(metricId, selectedId, parseFloat(value), data.id);
+          }
+        }
+        setSelectedId(null);
+        setValue("");
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -170,6 +308,9 @@ function StationContent() {
   const sessionStats = useMemo(() => {
     const entries = Object.entries(results);
     if (entries.length === 0) return null;
+    const lower = assignedMetric?.lowerIsBetter ?? false;
+    const isBetter = (a: number, b: number) => lower ? a < b : a > b;
+    const sortBest = (a: { value: number }, b: { value: number }) => lower ? a.value - b.value : b.value - a.value;
 
     const recorded = entries.map(([athleteId, val]) => {
       const athlete = athletes.find((a) => a.id === athleteId);
@@ -185,19 +326,19 @@ function StationContent() {
     recorded.forEach((r) => {
       const a = r.athlete!;
       const key = `${a.grade}-${a.gender}`;
-      if (!topByGroup[key] || r.value > topByGroup[key].value) {
+      if (!topByGroup[key] || isBetter(r.value, topByGroup[key].value)) {
         topByGroup[key] = { value: r.value, name: `${a.firstName} ${a.lastName[0]}.` };
       }
     });
 
     const topMale = recorded
       .filter((r) => r.athlete!.gender === "M")
-      .sort((a, b) => b.value - a.value)[0];
+      .sort(sortBest)[0];
     const topFemale = recorded
       .filter((r) => r.athlete!.gender === "F")
-      .sort((a, b) => b.value - a.value)[0];
+      .sort(sortBest)[0];
 
-    const topOverall = [...recorded].sort((a, b) => b.value - a.value)[0];
+    const topOverall = [...recorded].sort(sortBest)[0];
 
     const withChange = recorded.filter((r) => r.pctChange !== null);
     const topHighPct = withChange.length
@@ -208,21 +349,71 @@ function StationContent() {
       : null;
 
     return { topByGroup, topMale, topFemale, topOverall, topHighPct, topLowPct, recorded };
-  }, [results, athletes, baselines]);
+  }, [results, athletes, baselines, assignedMetric?.lowerIsBetter]);
+
+  // All-time best results for the selected metric
+  const allTimeBestForMetric: Record<string, string> = useMemo(() => {
+    const metricResults = allTimeResults[selectedMetricId] || {};
+    const out: Record<string, string> = {};
+    for (const [aid, r] of Object.entries(metricResults)) {
+      out[aid] = r.value;
+    }
+    return out;
+  }, [allTimeResults, selectedMetricId]);
+
+  // Compute all-time stats (same structure as sessionStats)
+  const allTimeStats = useMemo(() => {
+    const entries = Object.entries(allTimeBestForMetric);
+    if (entries.length === 0) return null;
+    const lower = assignedMetric?.lowerIsBetter ?? false;
+    const isBetter = (a: number, b: number) => lower ? a < b : a > b;
+    const sortBest = (a: { value: number }, b: { value: number }) => lower ? a.value - b.value : b.value - a.value;
+
+    const recorded = entries.map(([athleteId, val]) => {
+      const athlete = athletes.find((a) => a.id === athleteId);
+      const numVal = parseFloat(val);
+      return { athlete, value: numVal, pctChange: null as number | null };
+    }).filter((r) => r.athlete);
+
+    const topByGroup: Record<string, { value: number; name: string }> = {};
+    recorded.forEach((r) => {
+      const a = r.athlete!;
+      const key = `${a.grade}-${a.gender}`;
+      if (!topByGroup[key] || isBetter(r.value, topByGroup[key].value)) {
+        topByGroup[key] = { value: r.value, name: `${a.firstName} ${a.lastName[0]}.` };
+      }
+    });
+
+    const topMale = recorded.filter((r) => r.athlete!.gender === "M").sort(sortBest)[0];
+    const topFemale = recorded.filter((r) => r.athlete!.gender === "F").sort(sortBest)[0];
+    const topOverall = [...recorded].sort(sortBest)[0];
+
+    return { topByGroup, topMale, topFemale, topOverall, topHighPct: null, topLowPct: null, recorded };
+  }, [allTimeBestForMetric, athletes, assignedMetric?.lowerIsBetter]);
+
+  const activeStats = statsMode === "allTime" ? allTimeStats : sessionStats;
+  const showStats = sessionStats !== null || allTimeStats !== null;
 
   const renderAthleteRow = (athlete: typeof athletes[0], compact: boolean) => {
     const isDone = !!results[athlete.id];
     const isSelected = selectedId === athlete.id;
+
+    // Collect all metric values for this athlete (for inline display)
+    const metricValues = isMultiMetric ? assignedMetrics.map(m => {
+      const r = allResults[m.id]?.[athlete.id];
+      return r ? fmtVal(parseFloat(r.value)) : null;
+    }) : null;
+
     return (
       <button
         key={athlete.id}
         onClick={() => canRecord && handleSelect(athlete.id)}
-        disabled={isDone || !canRecord}
+        disabled={!canRecord}
         className={`flex items-center ${compact ? "gap-2 px-2.5 py-2" : "gap-3 px-4 py-3"} w-full border-b border-[var(--border)] last:border-b-0 text-left transition-colors cursor-pointer disabled:cursor-default ${
           isSelected
             ? "bg-[var(--primary)]"
             : isDone
-            ? "bg-[var(--color-success)]"
+            ? "bg-[var(--color-success)] hover:opacity-90"
             : "hover:bg-[var(--secondary)]"
         }`}
       >
@@ -250,19 +441,51 @@ function StationContent() {
         >
           {athlete.firstName} {athlete.lastName}
         </span>
-        {isDone ? (
+        {/* Multi-metric inline values */}
+        {isMultiMetric && metricValues && !isSelected && (
+          <div className="flex items-center gap-1 shrink-0">
+            {metricValues.map((v, i) => (
+              <span
+                key={assignedMetrics[i].id}
+                className={`font-mono ${compact ? "text-[9px]" : "text-[10px]"} font-semibold ${
+                  v !== null
+                    ? assignedMetrics[i].id === selectedMetricId
+                      ? "text-[var(--color-success-foreground)]"
+                      : "text-[var(--muted-foreground)]"
+                    : "text-[var(--muted-foreground)] opacity-30"
+                }`}
+              >
+                {v !== null ? v : "—"}
+              </span>
+            ))}
+          </div>
+        )}
+        {/* Single metric value display */}
+        {!isMultiMetric && isDone && !isSelected ? (
           <>
             <span className={`font-mono ${compact ? "text-xs" : "text-sm"} font-semibold text-[var(--color-success-foreground)] shrink-0`}>
-              {results[athlete.id]}
+              {fmtVal(parseFloat(results[athlete.id]))}
             </span>
-            {!compact && <Check size={16} className="text-[var(--color-success-foreground)]" />}
+            {!compact && canRecord ? (
+              <Pencil size={14} className="text-[var(--color-success-foreground)] opacity-60 shrink-0" />
+            ) : !compact ? (
+              <Check size={16} className="text-[var(--color-success-foreground)]" />
+            ) : null}
           </>
         ) : isSelected ? (
           <Pencil size={compact ? 12 : 16} className="text-[var(--primary-foreground)] shrink-0" />
-        ) : (
+        ) : !isMultiMetric ? (
           <span className={`font-mono ${compact ? "text-xs" : "text-sm"} text-[var(--muted-foreground)] shrink-0`}>
             —
           </span>
+        ) : null}
+        {/* Multi-metric: show pencil/check for selected metric */}
+        {isMultiMetric && isDone && !isSelected && (
+          canRecord ? (
+            <Pencil size={compact ? 10 : 14} className="text-[var(--color-success-foreground)] opacity-60 shrink-0" />
+          ) : (
+            <Check size={compact ? 12 : 16} className="text-[var(--color-success-foreground)] shrink-0" />
+          )
         )}
       </button>
     );
@@ -292,6 +515,32 @@ function StationContent() {
           <button onClick={() => setShowInfo(false)} className="ml-auto cursor-pointer">
             <X size={14} className="text-[var(--muted-foreground)]" />
           </button>
+        </div>
+      )}
+
+      {/* Metric Selector for multi-metric stations */}
+      {isMultiMetric && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--card)] border-b border-[var(--border)]">
+          <span className="font-secondary text-xs font-medium text-[var(--muted-foreground)] shrink-0">Metric:</span>
+          <select
+            value={selectedMetricId}
+            onChange={(e) => {
+              setSelectedMetricId(e.target.value);
+              setSelectedId(null);
+              setValue("");
+              setSubValues({});
+            }}
+            className="flex-1 h-9 rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] px-3 font-secondary text-sm font-medium text-[var(--foreground)] outline-none cursor-pointer"
+          >
+            {assignedMetrics.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} ({m.acronym})
+              </option>
+            ))}
+          </select>
+          <span className="font-mono text-xs text-[var(--muted-foreground)] shrink-0">
+            {completed}/{total}
+          </span>
         </div>
       )}
 
@@ -360,10 +609,10 @@ function StationContent() {
 
           <button
             onClick={handleSave}
-            disabled={isMultiInput ? computedResult === null : !value}
+            disabled={saving || (isMultiInput ? computedResult === null : !value)}
             className="w-full max-w-[280px] h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-base font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Save Result
+            {saving ? "Saving..." : (selectedId && resultIds[selectedId] ? "Update Result" : "Save Result")}
           </button>
         </div>
       )}
@@ -371,14 +620,36 @@ function StationContent() {
       {/* Scrollable content area */}
       <div className="flex-1 overflow-auto">
         {/* Session Stats */}
-        {sessionStats && (
+        {showStats && (
           <div className="px-4 py-3">
-            <h2 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
-              Session · {sessionStats.recorded.length} recorded
-            </h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+                {statsMode === "today" ? "Session" : "All Time"}{activeStats ? ` · ${activeStats.recorded.length} recorded` : ""}
+              </h2>
+              <div className="flex bg-[var(--secondary)] rounded-full p-0.5">
+                <button
+                  onClick={() => { setStatsMode("today"); localStorage.setItem("stationStatsMode", "today"); }}
+                  className={`px-2 py-0.5 rounded-full font-secondary text-[10px] font-semibold transition-colors cursor-pointer ${
+                    statsMode === "today" ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)]"
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => { setStatsMode("allTime"); localStorage.setItem("stationStatsMode", "allTime"); }}
+                  className={`px-2 py-0.5 rounded-full font-secondary text-[10px] font-semibold transition-colors cursor-pointer ${
+                    statsMode === "allTime" ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)]"
+                  }`}
+                >
+                  All Time
+                </button>
+              </div>
+            </div>
 
+            {activeStats ? (
+            <>
             {/* Top Marks Table */}
-            <div className="bg-[var(--card)] border border-[var(--border)] mb-2">
+            <div className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] mb-2">
               {/* Header */}
               <div className="flex px-3 py-1 border-b border-[var(--border)]">
                 <span className="w-10 font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase">Yr</span>
@@ -389,8 +660,8 @@ function StationContent() {
               {[12, 11, 10, 9].map((grade) => {
                 const maleKey = `${grade}-M`;
                 const femaleKey = `${grade}-F`;
-                const male = sessionStats.topByGroup[maleKey];
-                const female = sessionStats.topByGroup[femaleKey];
+                const male = activeStats.topByGroup[maleKey];
+                const female = activeStats.topByGroup[femaleKey];
                 if (!male && !female) return null;
                 return (
                   <div key={grade} className="flex items-center px-3 py-1 border-b border-[var(--border)] last:border-b-0">
@@ -400,7 +671,7 @@ function StationContent() {
                     <div className="flex-1">
                       {male ? (
                         <>
-                          <span className="font-mono text-sm font-bold text-[var(--foreground)]">{male.value}</span>
+                          <span className="font-mono text-sm font-bold text-[var(--foreground)]">{fmtVal(male.value)}</span>
                           <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">{male.name}</span>
                         </>
                       ) : (
@@ -410,7 +681,7 @@ function StationContent() {
                     <div className="flex-1">
                       {female ? (
                         <>
-                          <span className="font-mono text-sm font-bold text-[var(--foreground)]">{female.value}</span>
+                          <span className="font-mono text-sm font-bold text-[var(--foreground)]">{fmtVal(female.value)}</span>
                           <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">{female.name}</span>
                         </>
                       ) : (
@@ -424,11 +695,11 @@ function StationContent() {
               <div className="flex items-center px-3 py-1 border-t-2 border-[var(--primary)]">
                 <span className="w-10 font-secondary text-[10px] font-bold text-[var(--foreground)] uppercase">Top</span>
                 <div className="flex-1">
-                  {sessionStats.topMale ? (
+                  {activeStats.topMale ? (
                     <>
-                      <span className="font-mono text-sm font-bold text-[var(--foreground)]">{sessionStats.topMale.value}</span>
+                      <span className="font-mono text-sm font-bold text-[var(--foreground)]">{fmtVal(activeStats.topMale.value)}</span>
                       <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">
-                        {sessionStats.topMale.athlete!.firstName} {sessionStats.topMale.athlete!.lastName[0]}.
+                        {activeStats.topMale.athlete!.firstName} {activeStats.topMale.athlete!.lastName[0]}.
                       </span>
                     </>
                   ) : (
@@ -436,11 +707,11 @@ function StationContent() {
                   )}
                 </div>
                 <div className="flex-1">
-                  {sessionStats.topFemale ? (
+                  {activeStats.topFemale ? (
                     <>
-                      <span className="font-mono text-sm font-bold text-[var(--foreground)]">{sessionStats.topFemale.value}</span>
+                      <span className="font-mono text-sm font-bold text-[var(--foreground)]">{fmtVal(activeStats.topFemale.value)}</span>
                       <span className="font-secondary text-[10px] text-[var(--muted-foreground)] ml-1">
-                        {sessionStats.topFemale.athlete!.firstName} {sessionStats.topFemale.athlete!.lastName[0]}.
+                        {activeStats.topFemale.athlete!.firstName} {activeStats.topFemale.athlete!.lastName[0]}.
                       </span>
                     </>
                   ) : (
@@ -450,32 +721,38 @@ function StationContent() {
               </div>
             </div>
 
-            {/* % Change Leaders */}
-            {(sessionStats.topHighPct || sessionStats.topLowPct) && (
+            {/* % Change Leaders (today only) */}
+            {statsMode === "today" && (activeStats.topHighPct || activeStats.topLowPct) && (
               <div className="flex gap-2">
-                {sessionStats.topHighPct && (
-                  <div className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--color-success)] border border-[var(--border)]">
+                {activeStats.topHighPct && (
+                  <div className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
                     <TrendingUp size={12} className="text-[var(--color-success-foreground)] shrink-0" />
                     <span className="font-mono text-xs font-bold text-[var(--color-success-foreground)]">
-                      +{sessionStats.topHighPct.pctChange!.toFixed(1)}%
+                      +{activeStats.topHighPct.pctChange!.toFixed(1)}%
                     </span>
-                    <span className="font-secondary text-[9px] text-[var(--color-success-foreground)] truncate">
-                      {sessionStats.topHighPct.athlete!.firstName} {sessionStats.topHighPct.athlete!.lastName[0]}.
+                    <span className="font-secondary text-[9px] text-[var(--muted-foreground)] truncate">
+                      {activeStats.topHighPct.athlete!.firstName} {activeStats.topHighPct.athlete!.lastName[0]}.
                     </span>
                   </div>
                 )}
-                {sessionStats.topLowPct && (
-                  <div className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--color-error)] border border-[var(--border)]">
+                {activeStats.topLowPct && (
+                  <div className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
                     <TrendingDown size={12} className="text-[var(--color-error-foreground)] shrink-0" />
                     <span className="font-mono text-xs font-bold text-[var(--color-error-foreground)]">
-                      {sessionStats.topLowPct.pctChange!.toFixed(1)}%
+                      {activeStats.topLowPct.pctChange!.toFixed(1)}%
                     </span>
-                    <span className="font-secondary text-[9px] text-[var(--color-error-foreground)] truncate">
-                      {sessionStats.topLowPct.athlete!.firstName} {sessionStats.topLowPct.athlete!.lastName[0]}.
+                    <span className="font-secondary text-[9px] text-[var(--muted-foreground)] truncate">
+                      {activeStats.topLowPct.athlete!.firstName} {activeStats.topLowPct.athlete!.lastName[0]}.
                     </span>
                   </div>
                 )}
               </div>
+            )}
+            </>
+            ) : (
+              <p className="font-secondary text-xs text-[var(--muted-foreground)] text-center py-3">
+                No {statsMode === "today" ? "results today" : "results"} yet
+              </p>
             )}
           </div>
         )}
@@ -525,7 +802,7 @@ function StationContent() {
 
           {/* Single column (narrow < 350px) */}
           <div className="min-[350px]:hidden">
-            <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+            <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
               {(genderTab === "M" ? maleFiltered : femaleFiltered).map((a) =>
                 renderAthleteRow(a, false)
               )}
@@ -538,7 +815,7 @@ function StationContent() {
               <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
                 Men ({maleFiltered.length})
               </h3>
-              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
                 {maleFiltered.map((a) => renderAthleteRow(a, true))}
               </div>
             </div>
@@ -546,7 +823,7 @@ function StationContent() {
               <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
                 Women ({femaleFiltered.length})
               </h3>
-              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
                 {femaleFiltered.map((a) => renderAthleteRow(a, true))}
               </div>
             </div>
@@ -557,9 +834,33 @@ function StationContent() {
   );
 }
 
+function StationSkeleton() {
+  return (
+    <div className="flex flex-col h-full bg-[var(--background)]">
+      <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
+        <Skeleton className="w-6 h-6 rounded-full" />
+        <Skeleton className="h-5 w-28" />
+        <Skeleton className="w-6 h-6 rounded-full" />
+      </div>
+      <div className="flex-1 overflow-auto px-4 pt-3">
+        <Skeleton className="h-3 w-20 mb-3" />
+        <div className="flex flex-col gap-0">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)]">
+              <Skeleton className="w-9 h-9 rounded-full shrink-0" />
+              <Skeleton className="h-3.5 w-28 flex-1" />
+              <Skeleton className="h-3.5 w-6" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function StationPage() {
   return (
-    <Suspense fallback={<div className="flex h-full items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<StationSkeleton />}>
       <StationContent />
     </Suspense>
   );

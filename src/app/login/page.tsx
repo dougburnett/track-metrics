@@ -6,15 +6,16 @@ import Image from "next/image";
 import { Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
-type Mode = "signin" | "signup" | "forgot";
+type Mode = "signin" | "signup" | "forgot" | "reset";
 
 function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const [mode, setMode] = useState<Mode>("signin");
+  const [mode, setMode] = useState<Mode>(params.get("reset") === "true" ? "reset" : "signin");
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [error, setError] = useState(params.get("error") === "auth_callback_failed" ? "Email verification failed. Please try again." : "");
   const [message, setMessage] = useState("");
@@ -57,12 +58,28 @@ function LoginContent() {
     setLoading(false);
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(""); setMessage("");
+    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
+    if (password !== confirmPassword) { setError("Passwords do not match"); return; }
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      setError(error.message);
+    } else {
+      setMessage("Password updated! Redirecting...");
+      setTimeout(() => { router.push("/"); router.refresh(); }, 1500);
+    }
+    setLoading(false);
+  };
+
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(""); setMessage("");
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/login`,
+      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/login?reset=true")}`,
     });
     if (error) {
       setError(error.message);
@@ -77,11 +94,13 @@ function LoginContent() {
     setError(""); setMessage("");
   };
 
-  const title = mode === "signin" ? "Sign In" : mode === "signup" ? "Create Account" : "Reset Password";
+  const title = mode === "signin" ? "Sign In" : mode === "signup" ? "Create Account" : mode === "reset" ? "Set New Password" : "Reset Password";
   const subtitle = mode === "signin"
     ? "Record athletic performance in real time"
     : mode === "signup"
     ? "Join your team on CHS App"
+    : mode === "reset"
+    ? "Enter your new password below"
     : "Enter your email to receive a reset link";
 
   return (
@@ -94,8 +113,8 @@ function LoginContent() {
         </div>
 
         <form
-          onSubmit={mode === "signin" ? handleSignIn : mode === "signup" ? handleSignUp : handleForgotPassword}
-          className="w-full flex flex-col gap-4 bg-[var(--card)] border border-[var(--border)] p-6 rounded-none shadow-sm"
+          onSubmit={mode === "signin" ? handleSignIn : mode === "signup" ? handleSignUp : mode === "reset" ? handleResetPassword : handleForgotPassword}
+          className="w-full flex flex-col gap-4 bg-[var(--card)] border border-[var(--border)] p-6 rounded-[var(--radius-s)] shadow-sm"
         >
           {mode === "signup" && (
             <div className="flex flex-col gap-1.5">
@@ -111,19 +130,21 @@ function LoginContent() {
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="coach@school.edu"
-              className={inputCls}
-              required
-            />
-          </div>
+          {mode !== "reset" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="coach@school.edu"
+                className={inputCls}
+                required
+              />
+            </div>
+          )}
 
-          {mode !== "forgot" && (
+          {(mode === "signin" || mode === "signup") && (
             <div className="flex flex-col gap-1.5">
               <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Password</label>
               <div className="relative">
@@ -145,6 +166,44 @@ function LoginContent() {
                 </button>
               </div>
             </div>
+          )}
+
+          {mode === "reset" && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-secondary text-sm font-medium text-[var(--foreground)]">New Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="New password"
+                    className={"w-full pr-10 " + inputCls}
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Confirm Password</label>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className={inputCls}
+                  required
+                  minLength={6}
+                />
+              </div>
+            </>
           )}
 
           {error && (

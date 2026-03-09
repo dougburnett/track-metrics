@@ -25,6 +25,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = createClient();
 
     async function loadRole(userId: string) {
+      // Claim any pending invite (upgrades role if invite exists)
+      await supabase.rpc("claim_invite");
+
       const { data } = await supabase
         .from("profiles")
         .select("role")

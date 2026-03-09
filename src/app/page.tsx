@@ -2,10 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { Search, Settings, User } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
+import { createClient } from "@/lib/supabase";
 import { DynamicIcon } from "@/components/DynamicIcon";
+import { Skeleton } from "@/components/Skeleton";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -13,6 +15,21 @@ export default function Dashboard() {
   const { role } = useAuth();
   const [search, setSearch] = useState("");
   const [genderTab, setGenderTab] = useState<"M" | "F">("M");
+  const [athletesWithData, setAthletesWithData] = useState<Set<string>>(new Set());
+
+  // Load which athletes have any results
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("results")
+      .select("athlete_id")
+      .then((res: { data: { athlete_id: string }[] | null }) => {
+        if (res.data) {
+          const ids = new Set(res.data.map((r) => r.athlete_id));
+          setAthletesWithData(ids);
+        }
+      });
+  }, []);
 
   const filteredAthletes = athletes.filter((a) => {
     const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
@@ -41,6 +58,9 @@ export default function Dashboard() {
           {compact ? `Gr ${athlete.grade}` : `Grade ${athlete.grade}`}
         </div>
       </div>
+      {athletesWithData.has(athlete.id) && (
+        <div className="w-2 h-2 rounded-full bg-[var(--primary)] shrink-0" />
+      )}
     </button>
   );
 
@@ -52,7 +72,7 @@ export default function Dashboard() {
           Canby Track Metrics
         </h1>
         <div className="flex items-center gap-3">
-          {role === "super_admin" && (
+          {(role === "super_admin" || role === "admin") && (
             <button onClick={() => router.push("/admin/metrics")} className="cursor-pointer" title="Settings">
               <Settings size={20} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" />
             </button>
@@ -69,14 +89,32 @@ export default function Dashboard() {
           <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
             Stations
           </h2>
-          <div className="grid grid-cols-2 gap-2.5">
+          {loading ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex items-center gap-3 p-3 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
+                  <Skeleton className="w-9 h-9 rounded-full shrink-0" />
+                  <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-20" />
+                    <Skeleton className="h-3 w-28" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
             {stations.map((station) => {
-              const assignedMetric = metrics.find((m) => m.id === station.metricId);
+              const stationMetrics = station.metricIds.map(id => metrics.find(m => m.id === id)).filter(Boolean) as typeof metrics;
+              const metricLabel = stationMetrics.length === 0
+                ? station.description
+                : stationMetrics.length === 1
+                ? stationMetrics[0].name
+                : `${stationMetrics[0].name} (+${stationMetrics.length - 1})`;
               return (
                 <button
                   key={station.id}
                   onClick={() => router.push(`/station?id=${station.id}`)}
-                  className="flex items-center gap-3 p-3 bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
+                  className="flex items-center gap-3 p-3 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] hover:border-[var(--primary)] transition-colors cursor-pointer text-left"
                 >
                   <div className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
                     <DynamicIcon name={station.icon} size={16} className="text-[var(--primary-foreground)]" />
@@ -86,13 +124,14 @@ export default function Dashboard() {
                       {station.name}
                     </div>
                     <div className="font-secondary text-xs text-[var(--muted-foreground)] truncate">
-                      {assignedMetric ? assignedMetric.name : station.description}
+                      {metricLabel}
                     </div>
                   </div>
                 </button>
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Athletes Section */}
@@ -112,6 +151,20 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {loading ? (
+            <div className="flex flex-col gap-1">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-2.5 bg-[var(--card)] border-b border-[var(--border)]">
+                  <Skeleton className="w-8 h-8 rounded-full shrink-0" />
+                  <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-28" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+          <>
           {/* Gender tabs for narrow screens < 350px */}
           <div className="flex gap-1 mb-2 min-[350px]:hidden">
             <button
@@ -138,7 +191,7 @@ export default function Dashboard() {
 
           {/* Single column (narrow < 350px) */}
           <div className="min-[350px]:hidden">
-            <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+            <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
               {(genderTab === "M" ? maleAthletes : femaleAthletes).map((a) =>
                 renderAthleteRow(a, false)
               )}
@@ -151,7 +204,7 @@ export default function Dashboard() {
               <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
                 Men ({maleAthletes.length})
               </h3>
-              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
                 {maleAthletes.map((a) => renderAthleteRow(a, true))}
               </div>
             </div>
@@ -159,11 +212,13 @@ export default function Dashboard() {
               <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
                 Women ({femaleAthletes.length})
               </h3>
-              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)]">
+              <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
                 {femaleAthletes.map((a) => renderAthleteRow(a, true))}
               </div>
             </div>
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>

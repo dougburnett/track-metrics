@@ -2,9 +2,11 @@
 
 import { Suspense, useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Minus, Pencil, Check, X } from "lucide-react";
 import { useStore, type Athlete } from "@/lib/store";
+import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase";
+import { Skeleton } from "@/components/Skeleton";
 
 interface Result {
   id: string;
@@ -30,14 +32,24 @@ interface MetricSummary {
   history: { value: number; date: string }[];
 }
 
+const fmtVal = (n: number) => parseFloat(n.toFixed(2));
+
 function AthleteContent() {
   const router = useRouter();
   const params = useSearchParams();
   const athleteId = params.get("id");
-  const { athletes, metrics, categories } = useStore();
+  const { athletes, metrics, categories, saveAthlete } = useStore();
+  const { role } = useAuth();
+  const isAdmin = role === "super_admin" || role === "admin";
   const [results, setResults] = useState<Result[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState("All");
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<Athlete | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editingResultId, setEditingResultId] = useState<string | null>(null);
+  const [editResultValue, setEditResultValue] = useState("");
+  const [savingResult, setSavingResult] = useState(false);
 
   const athlete: Athlete | undefined = athletes.find((a) => a.id === athleteId);
 
@@ -130,6 +142,24 @@ function AthleteContent() {
       ? results
       : results.filter((r) => r.category === activeCategory);
 
+  const handleEditResult = (r: Result) => {
+    setEditingResultId(r.id);
+    setEditResultValue(String(r.value));
+  };
+
+  const handleSaveResult = async () => {
+    if (!editingResultId || savingResult) return;
+    const newVal = parseFloat(editResultValue);
+    if (isNaN(newVal)) return;
+    setSavingResult(true);
+    const supabase = createClient();
+    await supabase.from("results").update({ value: newVal }).eq("id", editingResultId);
+    setResults((prev) => prev.map((r) => r.id === editingResultId ? { ...r, value: newVal } : r));
+    setEditingResultId(null);
+    setEditResultValue("");
+    setSavingResult(false);
+  };
+
   if (!athlete) {
     return (
       <div className="flex flex-col h-full bg-[var(--background)]">
@@ -157,31 +187,118 @@ function AthleteContent() {
         <button onClick={() => router.push("/")} className="cursor-pointer">
           <ArrowLeft size={24} className="text-[var(--foreground)]" />
         </button>
-        <h1 className="font-headline text-lg text-[var(--foreground)]">
+        <h1 className="flex-1 font-headline text-lg text-[var(--foreground)]">
           {athlete.firstName} {athlete.lastName}
         </h1>
+        {isAdmin && !editing && (
+          <button
+            onClick={() => { setEditForm({ ...athlete }); setEditing(true); }}
+            className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors"
+          >
+            <Pencil size={18} className="text-[var(--muted-foreground)]" />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto">
         {/* Athlete Info */}
-        <div className="flex items-center gap-4 p-5 bg-[var(--card)] border-b border-[var(--border)]">
-          <div className="w-14 h-14 rounded-full bg-[var(--primary)] flex items-center justify-center">
-            <span className="font-mono text-xl font-bold text-[var(--primary-foreground)]">
-              {athlete.firstName[0]}{athlete.lastName[0]}
-            </span>
-          </div>
-          <div className="flex-1">
-            <div className="font-primary text-lg font-semibold text-[var(--foreground)]">
-              {athlete.firstName} {athlete.lastName}
+        {editing && editForm ? (
+          <div className="p-5 bg-[var(--card)] border-b border-[var(--border)] flex flex-col gap-3">
+            <input
+              value={editForm.firstName}
+              onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+              placeholder="First Name"
+              className="w-full h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)]"
+            />
+            <input
+              value={editForm.lastName}
+              onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+              placeholder="Last Name"
+              className="w-full h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)]"
+            />
+            <div className="flex gap-3">
+              <select
+                value={editForm.grade}
+                onChange={(e) => setEditForm({ ...editForm, grade: Number(e.target.value) })}
+                className="flex-1 h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] outline-none focus:border-[var(--primary)] appearance-none cursor-pointer"
+              >
+                <option value={9}>Grade 9</option>
+                <option value={10}>Grade 10</option>
+                <option value={11}>Grade 11</option>
+                <option value={12}>Grade 12</option>
+              </select>
+              <select
+                value={editForm.gender}
+                onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                className="flex-1 h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] outline-none focus:border-[var(--primary)] appearance-none cursor-pointer"
+              >
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+              </select>
             </div>
-            <div className="font-secondary text-sm text-[var(--muted-foreground)]">
-              Grade {athlete.grade} · {athlete.gender === "M" ? "Male" : "Female"}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setEditing(false); setEditForm(null); }}
+                className="flex-1 h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saving || !editForm.firstName || !editForm.lastName}
+                onClick={async () => {
+                  setSaving(true);
+                  await saveAthlete(editForm);
+                  setSaving(false);
+                  setEditing(false);
+                  setEditForm(null);
+                }}
+                className="flex-1 h-10 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-4 p-5 bg-[var(--card)] border-b border-[var(--border)] rounded-[var(--radius-s)]">
+            <div className="w-14 h-14 rounded-full bg-[var(--primary)] flex items-center justify-center">
+              <span className="font-mono text-xl font-bold text-[var(--primary-foreground)]">
+                {athlete.firstName[0]}{athlete.lastName[0]}
+              </span>
+            </div>
+            <div className="flex-1">
+              <div className="font-primary text-lg font-semibold text-[var(--foreground)]">
+                {athlete.firstName} {athlete.lastName}
+              </div>
+              <div className="font-secondary text-sm text-[var(--muted-foreground)]">
+                Grade {athlete.grade} · {athlete.gender === "M" ? "Male" : "Female"}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading skeleton for results */}
+        {loading && (
+          <div className="px-4 py-4 flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="p-4 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] flex flex-col gap-2">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-7 w-20" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              ))}
+            </div>
+            <div className="p-4 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] flex flex-col gap-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          </div>
+        )}
 
         {/* Category Tabs */}
-        {summaries.length > 0 && (
+        {!loading && summaries.length > 0 && (
           <div className="flex items-center gap-1 px-4 py-3 overflow-x-auto">
             {availableCategories.map((cat) => (
               <button
@@ -200,7 +317,7 @@ function AthleteContent() {
         )}
 
         {/* Key Metrics Cards */}
-        {filteredSummaries.length > 0 ? (
+        {!loading && filteredSummaries.length > 0 ? (
           <>
             <div className="px-4 pb-3">
               <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
@@ -210,14 +327,14 @@ function AthleteContent() {
                 {filteredSummaries.map((s) => (
                   <div
                     key={s.metricId}
-                    className="p-4 bg-[var(--card)] border border-[var(--border)]"
+                    className="p-4 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]"
                   >
                     <div className="font-secondary text-xs text-[var(--muted-foreground)] mb-1">
                       {s.metricName}
                     </div>
                     <div className="flex items-baseline gap-2">
                       <span className="font-mono text-2xl font-bold text-[var(--foreground)]">
-                        {s.latest}
+                        {fmtVal(s.latest)}
                       </span>
                       {s.unit && (
                         <span className="font-secondary text-xs text-[var(--muted-foreground)]">
@@ -280,7 +397,7 @@ function AthleteContent() {
                     return (
                       <div
                         key={s.metricId}
-                        className="p-4 bg-[var(--card)] border border-[var(--border)]"
+                        className="p-4 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]"
                       >
                         <div className="flex items-center justify-between mb-3">
                           <span className="font-secondary text-sm font-medium text-[var(--foreground)]">
@@ -299,7 +416,7 @@ function AthleteContent() {
                               {slot ? (
                                 <>
                                   <span className="font-mono text-[9px] sm:text-[10px] text-[var(--foreground)] mb-0.5 leading-none">
-                                    {slot.value}
+                                    {fmtVal(slot.value)}
                                   </span>
                                   <div
                                     className="w-full bg-[var(--primary)] rounded-t-sm transition-all"
@@ -339,7 +456,7 @@ function AthleteContent() {
               <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
                 All Results ({filteredResults.length})
               </h2>
-              <div className="bg-[var(--card)] border border-[var(--border)] overflow-hidden">
+              <div className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] overflow-hidden">
                 {/* Table Header */}
                 <div className="flex items-center px-4 py-2 bg-[var(--secondary)] border-b border-[var(--border)]">
                   <span className="flex-1 font-primary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
@@ -354,9 +471,10 @@ function AthleteContent() {
                   <span className="w-16 text-right font-primary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
                     Change
                   </span>
+                  {isAdmin && <span className="w-8" />}
                 </div>
                 {/* Table Rows */}
-                {filteredResults.map((r, idx) => {
+                {filteredResults.map((r) => {
                   // Find previous result for same metric
                   const sameMetric = filteredResults.filter(
                     (x) => x.metricId === r.metricId
@@ -367,6 +485,7 @@ function AthleteContent() {
                     prev && prev.value !== 0
                       ? ((r.value - prev.value) / Math.abs(prev.value)) * 100
                       : null;
+                  const isEditingThis = editingResultId === r.id;
 
                   return (
                     <div
@@ -382,14 +501,26 @@ function AthleteContent() {
                       <span className="flex-1 font-mono text-sm font-medium text-[var(--foreground)]">
                         {r.metricAcronym}
                       </span>
-                      <span className="w-20 text-right font-mono text-sm font-semibold text-[var(--foreground)]">
-                        {r.value}
-                        {r.subValues && (
-                          <span className="block font-secondary text-[9px] text-[var(--muted-foreground)] font-normal">
-                            {Object.entries(r.subValues).map(([k, v]) => `${k}:${v}`).join(" ")}
-                          </span>
-                        )}
-                      </span>
+                      {isEditingThis ? (
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={editResultValue}
+                          onChange={(e) => setEditResultValue(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleSaveResult()}
+                          autoFocus
+                          className="w-20 h-7 rounded-[var(--radius-s)] bg-[var(--background)] border border-[var(--primary)] px-2 font-mono text-sm font-semibold text-[var(--foreground)] outline-none text-right"
+                        />
+                      ) : (
+                        <span className="w-20 text-right font-mono text-sm font-semibold text-[var(--foreground)]">
+                          {fmtVal(r.value)}
+                          {r.subValues && (
+                            <span className="block font-secondary text-[9px] text-[var(--muted-foreground)] font-normal">
+                              {Object.entries(r.subValues).map(([k, v]) => `${k}:${v}`).join(" ")}
+                            </span>
+                          )}
+                        </span>
+                      )}
                       <span
                         className={`w-16 text-right font-mono text-xs font-semibold ${
                           pct === null
@@ -403,13 +534,41 @@ function AthleteContent() {
                       >
                         {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`}
                       </span>
+                      {isAdmin && (
+                        <span className="w-8 flex justify-end">
+                          {isEditingThis ? (
+                            <span className="flex gap-0.5">
+                              <button
+                                onClick={handleSaveResult}
+                                disabled={savingResult}
+                                className="p-1 cursor-pointer hover:bg-[var(--secondary)] rounded transition-colors disabled:opacity-40"
+                              >
+                                <Check size={12} className="text-[var(--color-success-foreground)]" />
+                              </button>
+                              <button
+                                onClick={() => { setEditingResultId(null); setEditResultValue(""); }}
+                                className="p-1 cursor-pointer hover:bg-[var(--secondary)] rounded transition-colors"
+                              >
+                                <X size={12} className="text-[var(--muted-foreground)]" />
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleEditResult(r)}
+                              className="p-1 cursor-pointer hover:bg-[var(--secondary)] rounded transition-colors"
+                            >
+                              <Pencil size={12} className="text-[var(--muted-foreground)]" />
+                            </button>
+                          )}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
           </>
-        ) : (
+        ) : !loading ? (
           /* Empty State */
           <div className="flex flex-col items-center justify-center py-16 px-4">
             <div className="w-16 h-16 rounded-full bg-[var(--secondary)] flex items-center justify-center mb-4">
@@ -422,7 +581,34 @@ function AthleteContent() {
               Record metrics at a station to see this athlete&apos;s data here.
             </p>
           </div>
-        )}
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AthleteSkeleton() {
+  return (
+    <div className="flex flex-col h-full bg-[var(--background)]">
+      <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
+        <Skeleton className="w-6 h-6 rounded-full" />
+        <Skeleton className="h-5 w-36" />
+      </div>
+      <div className="flex items-center gap-4 p-5 bg-[var(--card)] border-b border-[var(--border)]">
+        <Skeleton className="w-14 h-14 rounded-full shrink-0" />
+        <div className="flex-1 flex flex-col gap-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3.5 w-28" />
+        </div>
+      </div>
+      <div className="px-4 py-4 grid grid-cols-2 gap-3">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="p-4 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] flex flex-col gap-2">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-7 w-20" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -430,7 +616,7 @@ function AthleteContent() {
 
 export default function AthletePage() {
   return (
-    <Suspense fallback={<div className="flex h-full items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<AthleteSkeleton />}>
       <AthleteContent />
     </Suspense>
   );

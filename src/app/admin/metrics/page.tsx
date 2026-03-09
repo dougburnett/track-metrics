@@ -2,14 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Pencil, Trash2, X, Check, LayoutGrid, Users, Send } from "lucide-react";
-import { useStore, AVAILABLE_ICONS, type Metric, type MetricInput, type Station } from "@/lib/store";
+import { ArrowLeft, Plus, Pencil, Trash2, X, Check, LayoutGrid, Users, UserRound, Copy, ChevronRight, Ruler } from "lucide-react";
+import { useStore, AVAILABLE_ICONS, type Metric, type MetricInput, type Station, type Athlete } from "@/lib/store";
 import { indexToVar } from "@/lib/formula";
 import { useAuth, type UserRole } from "@/lib/auth-context";
 import { DynamicIcon } from "@/components/DynamicIcon";
 import { createClient } from "@/lib/supabase";
+import { Skeleton } from "@/components/Skeleton";
 
-type View = "list" | "editMetric" | "categories" | "units" | "stations" | "editStation" | "team";
+type View = "list" | "metrics" | "editMetric" | "categories" | "units" | "stations" | "editStation" | "team" | "athletes" | "editAthlete";
 
 interface Profile {
   id: string;
@@ -29,15 +30,16 @@ export default function AdminMetricsPage() {
   const router = useRouter();
   const { role, loading: authLoading } = useAuth();
   const {
-    stations, metrics, categories, units, loading,
+    stations, metrics, athletes, categories, units, loading,
     saveStation, deleteStation: removeStation,
     saveMetric, deleteMetric: removeMetric,
+    saveAthlete, deleteAthlete: removeAthlete,
     addCategory, renameCategory, deleteCategory,
     addUnit, renameUnit, deleteUnit,
   } = useStore();
 
   useEffect(() => {
-    if (!authLoading && role !== "super_admin") {
+    if (!authLoading && role !== "super_admin" && role !== "admin") {
       router.push("/");
     }
   }, [authLoading, role, router]);
@@ -45,14 +47,15 @@ export default function AdminMetricsPage() {
   const [view, setView] = useState<View>("list");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Metric form
   const [form, setForm] = useState<Metric>({ id: "", name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "", lowerIsBetter: false, minValue: null, maxValue: null, unit: "", inputs: null, formula: "" });
   const updateForm = (field: keyof Metric, value: string | boolean | number | null | MetricInput[]) => setForm((prev) => ({ ...prev, [field]: value }));
 
-  // Station form (now has location + metricId)
-  const [stationForm, setStationForm] = useState<Station>({ id: "", name: "", icon: "zap", description: "", location: "", metricId: "" });
-  const updateStation = (field: keyof Station, value: string) => setStationForm((prev) => ({ ...prev, [field]: value }));
+  // Station form
+  const [stationForm, setStationForm] = useState<Station>({ id: "", name: "", icon: "zap", description: "", location: "", metricIds: [] });
+  const updateStation = (field: keyof Station, value: string | string[]) => setStationForm((prev) => ({ ...prev, [field]: value }));
 
   // Category editing
   const [newCategory, setNewCategory] = useState("");
@@ -73,15 +76,17 @@ export default function AdminMetricsPage() {
     setSaving(true);
     await saveMetric(form);
     setSaving(false);
-    setView("list");
+    setView("metrics");
   };
   const handleDeleteMetric = async (id: string) => {
+    setDeletingId(id);
     await removeMetric(id);
+    setDeletingId(null);
   };
 
   // --- Station handlers ---
   const handleEditStation = (station: Station) => { setStationForm({ ...station }); setView("editStation"); };
-  const handleNewStation = () => { setStationForm({ id: `station-${Date.now()}`, name: "", icon: "zap", description: "", location: "", metricId: "" }); setView("editStation"); };
+  const handleNewStation = () => { setStationForm({ id: `station-${Date.now()}`, name: "", icon: "zap", description: "", location: "", metricIds: [] }); setView("editStation"); };
   const handleSaveStation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stationForm.name || saving) return;
@@ -91,7 +96,29 @@ export default function AdminMetricsPage() {
     setView("stations");
   };
   const handleDeleteStation = async (id: string) => {
+    setDeletingId(id);
     await removeStation(id);
+    setDeletingId(null);
+  };
+
+  // --- Athlete form + handlers ---
+  const [athleteForm, setAthleteForm] = useState<Athlete>({ id: "", firstName: "", lastName: "", grade: 9, gender: "M" });
+  const updateAthleteForm = (field: keyof Athlete, value: string | number) => setAthleteForm((prev) => ({ ...prev, [field]: value }));
+
+  const handleNewAthlete = () => { setAthleteForm({ id: `athlete-${Date.now()}`, firstName: "", lastName: "", grade: 9, gender: "M" }); setView("editAthlete"); };
+  const handleEditAthlete = (athlete: Athlete) => { setAthleteForm({ ...athlete }); setView("editAthlete"); };
+  const handleSaveAthlete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!athleteForm.firstName || !athleteForm.lastName || saving) return;
+    setSaving(true);
+    await saveAthlete(athleteForm);
+    setSaving(false);
+    setView("athletes");
+  };
+  const handleDeleteAthlete = async (id: string) => {
+    setDeletingId(id);
+    await removeAthlete(id);
+    setDeletingId(null);
   };
 
   // --- Category handlers ---
@@ -141,6 +168,7 @@ export default function AdminMetricsPage() {
   const [inviteRole, setInviteRole] = useState<UserRole>("athlete");
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteMsg, setInviteMsg] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
   const [pendingInvites, setPendingInvites] = useState<Invite[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
   const [teamLoading, setTeamLoading] = useState(false);
@@ -169,9 +197,13 @@ export default function AdminMetricsPage() {
     const data = await res.json();
     if (data.error) {
       setInviteMsg(data.error);
+      setInviteLink("");
     } else {
-      setInviteMsg("Invite sent!");
+      const loginUrl = window.location.origin + "/login";
+      setInviteLink(loginUrl);
+      setInviteMsg("Invite created! Link copied to clipboard.");
       setInviteEmail("");
+      try { await navigator.clipboard.writeText(loginUrl); } catch {}
       await loadTeamData();
     }
     setInviteSending(false);
@@ -192,7 +224,7 @@ export default function AdminMetricsPage() {
   const inputCls = "h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)]";
   const textareaCls = "rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] p-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)] resize-none";
 
-  if (loading || authLoading || role !== "super_admin") {
+  if (authLoading || (role !== "super_admin" && role !== "admin")) {
     return (
       <div className="flex items-center justify-center h-full bg-[var(--background)]">
         <span className="font-secondary text-sm text-[var(--muted-foreground)]">Loading...</span>
@@ -200,9 +232,116 @@ export default function AdminMetricsPage() {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full bg-[var(--background)]">
+        <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
+          <Skeleton className="w-6 h-6 rounded-full" />
+          <Skeleton className="h-5 w-24" />
+        </div>
+        <div className="flex-1 overflow-auto">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-4 border-b border-[var(--border)] bg-[var(--card)]">
+              <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+              <div className="flex-1 flex flex-col gap-1.5">
+                <Skeleton className="h-3.5 w-24" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+              <Skeleton className="w-5 h-5" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ===================== EDIT ATHLETE VIEW =====================
+  if (view === "editAthlete") {
+    return (
+      <div className="flex flex-col h-full bg-[var(--background)]">
+        <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
+          <button onClick={() => setView("athletes")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
+          <h1 className="font-headline text-lg text-[var(--foreground)]">
+            {athletes.find((a) => a.id === athleteForm.id) ? "Edit Athlete" : "New Athlete"}
+          </h1>
+        </div>
+        <form onSubmit={handleSaveAthlete} className="flex-1 overflow-auto p-4 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">First Name</label>
+            <input value={athleteForm.firstName} onChange={(e) => updateAthleteForm("firstName", e.target.value)} placeholder="e.g. John" className={inputCls} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Last Name</label>
+            <input value={athleteForm.lastName} onChange={(e) => updateAthleteForm("lastName", e.target.value)} placeholder="e.g. Smith" className={inputCls} />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1 flex flex-col gap-1.5">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Grade</label>
+              <select value={athleteForm.grade} onChange={(e) => updateAthleteForm("grade", Number(e.target.value))} className={inputCls + " appearance-none cursor-pointer"}>
+                <option value={9}>9</option>
+                <option value={10}>10</option>
+                <option value={11}>11</option>
+                <option value={12}>12</option>
+              </select>
+            </div>
+            <div className="flex-1 flex flex-col gap-1.5">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Gender</label>
+              <select value={athleteForm.gender} onChange={(e) => updateAthleteForm("gender", e.target.value)} className={inputCls + " appearance-none cursor-pointer"}>
+                <option value="M">M</option>
+                <option value="F">F</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2 pb-6">
+            <button type="button" onClick={() => setView("athletes")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">Cancel</button>
+            <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
+              {saving ? "Saving..." : "Save Athlete"}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // ===================== ATHLETES LIST VIEW =====================
+  if (view === "athletes") {
+    return (
+      <div className="flex flex-col h-full bg-[var(--background)]">
+        <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
+            <h1 className="font-headline text-lg text-[var(--foreground)]">Athletes</h1>
+          </div>
+          <button onClick={handleNewAthlete} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
+            <Plus size={18} /> Add
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto">
+          {athletes.map((athlete) => (
+            <div key={athlete.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditAthlete(athlete)}>
+                <div className="font-headline text-sm text-[var(--foreground)]">{athlete.firstName} {athlete.lastName}</div>
+                <div className="font-secondary text-xs text-[var(--muted-foreground)]">
+                  Grade {athlete.grade} · {athlete.gender === "M" ? "Male" : "Female"}
+                </div>
+              </div>
+              <button onClick={() => handleEditAthlete(athlete)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
+                <Pencil size={16} className="text-[var(--muted-foreground)]" />
+              </button>
+              <button onClick={() => handleDeleteAthlete(athlete.id)} disabled={deletingId === athlete.id} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                <Trash2 size={16} className={deletingId === athlete.id ? "animate-pulse text-[var(--muted-foreground)]" : "text-[var(--destructive)]"} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   // ===================== EDIT STATION VIEW =====================
   if (view === "editStation") {
-    const assignedMetric = metrics.find(m => m.id === stationForm.metricId);
+    const assignedStationMetrics = stationForm.metricIds.map(id => metrics.find(m => m.id === id)).filter(Boolean) as typeof metrics;
+    const availableMetrics = metrics.filter(m => !stationForm.metricIds.includes(m.id));
     return (
       <div className="flex flex-col h-full bg-[var(--background)]">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
@@ -225,18 +364,45 @@ export default function AdminMetricsPage() {
             <input value={stationForm.location} onChange={(e) => updateStation("location", e.target.value)} placeholder="e.g. Near the long jump pit" className={inputCls} />
           </div>
 
-          {/* Metric assignment */}
+          {/* Metric assignment — multi-select */}
           <div className="flex flex-col gap-1.5">
-            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Metric to Measure</label>
-            <select value={stationForm.metricId} onChange={(e) => updateStation("metricId", e.target.value)} className={inputCls + " appearance-none cursor-pointer"}>
-              <option value="">None</option>
-              {metrics.map((m) => (<option key={m.id} value={m.id}>{m.name} ({m.acronym})</option>))}
-            </select>
-            {assignedMetric && (
-              <div className="mt-1 p-3 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-m)]">
-                <div className="font-secondary text-xs text-[var(--muted-foreground)]">{assignedMetric.instructions}</div>
-                {assignedMetric.gear && <div className="font-secondary text-xs text-[var(--muted-foreground)] mt-1">Gear: {assignedMetric.gear}</div>}
+            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">
+              Metrics to Measure {assignedStationMetrics.length > 0 && <span className="text-[var(--muted-foreground)] font-normal">({assignedStationMetrics.length})</span>}
+            </label>
+            {/* Assigned metrics list */}
+            {assignedStationMetrics.length > 0 && (
+              <div className="flex flex-col gap-1">
+                {assignedStationMetrics.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2 p-2.5 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-m)]">
+                    <div className="flex-1 min-w-0">
+                      <span className="font-secondary text-sm font-medium text-[var(--foreground)]">{m.name}</span>
+                      <span className="font-mono text-xs text-[var(--muted-foreground)] ml-1.5">{m.acronym}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateStation("metricIds", stationForm.metricIds.filter(id => id !== m.id))}
+                      className="p-1.5 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors shrink-0"
+                    >
+                      <X size={14} className="text-[var(--destructive)]" />
+                    </button>
+                  </div>
+                ))}
               </div>
+            )}
+            {/* Add metric dropdown */}
+            {availableMetrics.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    updateStation("metricIds", [...stationForm.metricIds, e.target.value]);
+                  }
+                }}
+                className={inputCls + " appearance-none cursor-pointer"}
+              >
+                <option value="">+ Add a metric...</option>
+                {availableMetrics.map((m) => (<option key={m.id} value={m.id}>{m.name} ({m.acronym})</option>))}
+              </select>
             )}
           </div>
 
@@ -289,7 +455,12 @@ export default function AdminMetricsPage() {
         </div>
         <div className="flex-1 overflow-auto">
           {stations.map((station) => {
-            const assignedMetric = metrics.find(m => m.id === station.metricId);
+            const stationMetrics = station.metricIds.map(id => metrics.find(m => m.id === id)).filter(Boolean) as typeof metrics;
+            const metricLabel = stationMetrics.length === 0
+              ? "No metrics assigned"
+              : stationMetrics.length === 1
+              ? stationMetrics[0].name
+              : `${stationMetrics[0].name} (+${stationMetrics.length - 1} more)`;
             return (
               <div key={station.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
                 <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
@@ -298,15 +469,15 @@ export default function AdminMetricsPage() {
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditStation(station)}>
                   <div className="font-headline text-sm text-[var(--foreground)]">{station.name}</div>
                   <div className="font-secondary text-xs text-[var(--muted-foreground)]">
-                    {assignedMetric ? assignedMetric.name : "No metric assigned"}
+                    {metricLabel}
                     {station.location ? ` · ${station.location}` : ""}
                   </div>
                 </div>
                 <button onClick={() => handleEditStation(station)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
                   <Pencil size={16} className="text-[var(--muted-foreground)]" />
                 </button>
-                <button onClick={() => handleDeleteStation(station.id)} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors">
-                  <Trash2 size={16} className="text-[var(--destructive)]" />
+                <button onClick={() => handleDeleteStation(station.id)} disabled={deletingId === station.id} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                  <Trash2 size={16} className={deletingId === station.id ? "animate-pulse text-[var(--muted-foreground)]" : "text-[var(--destructive)]"} />
                 </button>
               </div>
             );
@@ -391,7 +562,7 @@ export default function AdminMetricsPage() {
     return (
       <div className="flex flex-col h-full bg-[var(--background)]">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
-          <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
+          <button onClick={() => setView("metrics")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
           <h1 className="font-headline text-lg text-[var(--foreground)]">
             {editingId ? "Edit Metric" : "New Metric"}
           </h1>
@@ -535,7 +706,7 @@ export default function AdminMetricsPage() {
           </div>
 
           <div className="flex gap-3 pt-2 pb-6">
-            <button type="button" onClick={() => setView("list")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">Cancel</button>
+            <button type="button" onClick={() => setView("metrics")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">Cancel</button>
             <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
               {saving ? "Saving..." : "Save Metric"}
             </button>
@@ -574,23 +745,45 @@ export default function AdminMetricsPage() {
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value as UserRole)}
-                className={inputCls + " appearance-none cursor-pointer w-32"}
+                className={inputCls + " appearance-none cursor-pointer shrink-0 w-auto"}
               >
                 <option value="athlete">Athlete</option>
                 <option value="admin">Admin</option>
                 <option value="super_admin">Super Admin</option>
               </select>
-              <button
-                onClick={handleSendInvite}
-                disabled={inviteSending}
-                className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 shrink-0"
-              >
-                <Send size={14} />
-                {inviteSending ? "Sending..." : "Send"}
-              </button>
             </div>
+            <button
+              onClick={handleSendInvite}
+              disabled={inviteSending}
+              className="flex items-center justify-center gap-1.5 h-10 w-full rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+            >
+              <Plus size={14} />
+              {inviteSending ? "Creating..." : "Create Invite"}
+            </button>
             {inviteMsg && (
               <p className="font-secondary text-xs text-[var(--muted-foreground)]">{inviteMsg}</p>
+            )}
+            {inviteLink && (
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={inviteLink}
+                  className={inputCls + " flex-1 min-w-0 text-[var(--muted-foreground)]"}
+                  onFocus={(e) => e.target.select()}
+                />
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(inviteLink);
+                      setInviteMsg("Copied!");
+                    } catch {}
+                  }}
+                  className="shrink-0 w-10 h-10 flex items-center justify-center rounded-[var(--radius-pill)] bg-[var(--secondary)] hover:bg-[var(--border)] transition-colors cursor-pointer"
+                  title="Copy link"
+                >
+                  <Copy size={16} className="text-[var(--foreground)]" />
+                </button>
+              </div>
             )}
           </div>
 
@@ -657,50 +850,100 @@ export default function AdminMetricsPage() {
     );
   }
 
-  // ===================== METRIC LIST VIEW =====================
-  return (
-    <div className="flex flex-col h-full bg-[var(--background)]">
-      <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push("/")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-          <h1 className="font-headline text-lg text-[var(--foreground)]">Metrics</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setView("stations")} className="flex items-center gap-1.5 h-10 px-3 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer" title="Edit Stations">
-            <LayoutGrid size={16} /> Stations
-          </button>
-          <button onClick={() => { setView("team"); loadTeamData(); }} className="flex items-center gap-1.5 h-10 px-3 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer" title="Team">
-            <Users size={16} /> Team
-          </button>
+  // ===================== METRICS LIST VIEW =====================
+  if (view === "metrics") {
+    return (
+      <div className="flex flex-col h-full bg-[var(--background)]">
+        <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
+            <h1 className="font-headline text-lg text-[var(--foreground)]">Metrics</h1>
+          </div>
           <button onClick={handleNewMetric} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
             <Plus size={18} /> Add
           </button>
         </div>
+
+        <div className="flex-1 overflow-auto">
+          {metrics.map((metric) => {
+            return (
+              <div key={metric.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditMetric(metric)}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-primary text-sm font-semibold text-[var(--foreground)]">{metric.name}</span>
+                    <span className="font-mono text-xs text-[var(--muted-foreground)]">{metric.acronym}</span>
+                  </div>
+                  <div className="font-secondary text-xs text-[var(--muted-foreground)] mt-0.5">
+                    {categories.find((c) => c.toLowerCase() === metric.category) || metric.category}
+                    {metric.gear ? ` · ${metric.gear}` : ""}
+                  </div>
+                </div>
+                <button onClick={() => handleEditMetric(metric)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
+                  <Pencil size={16} className="text-[var(--muted-foreground)]" />
+                </button>
+                <button onClick={() => handleDeleteMetric(metric.id)} disabled={deletingId === metric.id} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                  <Trash2 size={16} className={deletingId === metric.id ? "animate-pulse text-[var(--muted-foreground)]" : "text-[var(--destructive)]"} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ===================== SETTINGS LANDING =====================
+  return (
+    <div className="flex flex-col h-full bg-[var(--background)]">
+      <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
+        <button onClick={() => router.push("/")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
+        <h1 className="font-headline text-lg text-[var(--foreground)]">Settings</h1>
       </div>
 
       <div className="flex-1 overflow-auto">
-        {metrics.map((metric) => {
-          return (
-            <div key={metric.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
-              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditMetric(metric)}>
-                <div className="flex items-center gap-2">
-                  <span className="font-primary text-sm font-semibold text-[var(--foreground)]">{metric.name}</span>
-                  <span className="font-mono text-xs text-[var(--muted-foreground)]">{metric.acronym}</span>
-                </div>
-                <div className="font-secondary text-xs text-[var(--muted-foreground)] mt-0.5">
-                  {categories.find((c) => c.toLowerCase() === metric.category) || metric.category}
-                  {metric.gear ? ` · ${metric.gear}` : ""}
-                </div>
-              </div>
-              <button onClick={() => handleEditMetric(metric)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
-                <Pencil size={16} className="text-[var(--muted-foreground)]" />
-              </button>
-              <button onClick={() => handleDeleteMetric(metric.id)} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors">
-                <Trash2 size={16} className="text-[var(--destructive)]" />
-              </button>
-            </div>
-          );
-        })}
+        <button onClick={() => setView("stations")} className="flex items-center gap-3 px-4 py-4 border-b border-[var(--border)] bg-[var(--card)] w-full text-left cursor-pointer hover:bg-[var(--secondary)] transition-colors">
+          <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+            <LayoutGrid size={18} className="text-[var(--primary-foreground)]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-headline text-sm text-[var(--foreground)]">Stations</div>
+            <div className="font-secondary text-xs text-[var(--muted-foreground)]">{stations.length} station{stations.length !== 1 ? "s" : ""}</div>
+          </div>
+          <ChevronRight size={18} className="text-[var(--muted-foreground)]" />
+        </button>
+
+        <button onClick={() => setView("metrics")} className="flex items-center gap-3 px-4 py-4 border-b border-[var(--border)] bg-[var(--card)] w-full text-left cursor-pointer hover:bg-[var(--secondary)] transition-colors">
+          <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+            <Ruler size={18} className="text-[var(--primary-foreground)]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-headline text-sm text-[var(--foreground)]">Metrics</div>
+            <div className="font-secondary text-xs text-[var(--muted-foreground)]">{metrics.length} metric{metrics.length !== 1 ? "s" : ""}</div>
+          </div>
+          <ChevronRight size={18} className="text-[var(--muted-foreground)]" />
+        </button>
+
+        <button onClick={() => setView("athletes")} className="flex items-center gap-3 px-4 py-4 border-b border-[var(--border)] bg-[var(--card)] w-full text-left cursor-pointer hover:bg-[var(--secondary)] transition-colors">
+          <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+            <UserRound size={18} className="text-[var(--primary-foreground)]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-headline text-sm text-[var(--foreground)]">Athletes</div>
+            <div className="font-secondary text-xs text-[var(--muted-foreground)]">{athletes.length} athlete{athletes.length !== 1 ? "s" : ""}</div>
+          </div>
+          <ChevronRight size={18} className="text-[var(--muted-foreground)]" />
+        </button>
+
+        <button onClick={() => { setView("team"); loadTeamData(); }} className="flex items-center gap-3 px-4 py-4 border-b border-[var(--border)] bg-[var(--card)] w-full text-left cursor-pointer hover:bg-[var(--secondary)] transition-colors">
+          <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+            <Users size={18} className="text-[var(--primary-foreground)]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-headline text-sm text-[var(--foreground)]">Team</div>
+            <div className="font-secondary text-xs text-[var(--muted-foreground)]">Invite & manage members</div>
+          </div>
+          <ChevronRight size={18} className="text-[var(--muted-foreground)]" />
+        </button>
       </div>
     </div>
   );
