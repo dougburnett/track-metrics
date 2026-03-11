@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Claim any pending invite once per session
       if (!claimedInvite) {
         claimedInvite = true;
-        await supabase.rpc("claim_invite").catch(() => {});
+        await supabase.rpc("claim_invite").then(() => {}, () => {});
       }
 
       const { data } = await supabase
