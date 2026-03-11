@@ -17,12 +17,13 @@ export default function Dashboard() {
   const [genderTab, setGenderTab] = useState<"M" | "F">("M");
   const [athletesWithData, setAthletesWithData] = useState<Set<string>>(new Set());
 
-  // Load which athletes have any results
+  // Load which athletes have any results (distinct)
   useEffect(() => {
     const supabase = createClient();
     supabase
       .from("results")
       .select("athlete_id")
+      .limit(500)
       .then((res: { data: { athlete_id: string }[] | null }) => {
         if (res.data) {
           const ids = new Set(res.data.map((r) => r.athlete_id));

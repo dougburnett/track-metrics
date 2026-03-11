@@ -118,6 +118,10 @@ function StationContent() {
       today.setHours(0, 0, 0, 0);
       const todayISO = today.toISOString();
 
+      // Cache metric lowerIsBetter lookup
+      const lowerMap: Record<string, boolean> = {};
+      metrics.forEach(m => { lowerMap[m.id] = m.lowerIsBetter; });
+
       const allRes: Record<string, Record<string, { value: string; resultId: string }>> = {};
       const allTimeBests: Record<string, Record<string, { value: string; resultId: string }>> = {};
       const prev: Record<string, number> = {};
@@ -138,8 +142,7 @@ function StationContent() {
         // All-time bests: keep best value per metric per athlete
         if (!allTimeBests[r.metric_id]) allTimeBests[r.metric_id] = {};
         const existing = allTimeBests[r.metric_id][r.athlete_id];
-        const met = metrics.find(m => m.id === r.metric_id);
-        const lower = met?.lowerIsBetter ?? false;
+        const lower = lowerMap[r.metric_id] ?? false;
         if (!existing || (lower ? r.value < parseFloat(existing.value) : r.value > parseFloat(existing.value))) {
           allTimeBests[r.metric_id][r.athlete_id] = { value: String(r.value), resultId: r.id };
         }

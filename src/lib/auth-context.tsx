@@ -24,9 +24,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const supabase = createClient();
 
+    let claimedInvite = false;
+
     async function loadRole(userId: string) {
-      // Claim any pending invite (upgrades role if invite exists)
-      await supabase.rpc("claim_invite");
+      // Claim any pending invite once per session
+      if (!claimedInvite) {
+        claimedInvite = true;
+        await supabase.rpc("claim_invite").catch(() => {});
+      }
 
       const { data } = await supabase
         .from("profiles")
@@ -49,12 +54,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     loadUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
-      if (currentUser) {
-        await loadRole(currentUser.id);
-      } else {
+      // Only reload role on actual auth events, not token refreshes
+      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+        if (currentUser) await loadRole(currentUser.id);
+      } else if (event === "SIGNED_OUT") {
         setRole(null);
       }
       setLoading(false);
