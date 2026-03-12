@@ -105,78 +105,62 @@ function StationContent() {
   const completed = Object.keys(results).length;
   const total = athletes.length;
 
-  // Load results for ALL assigned metrics (with localStorage cache)
+  // Load today's results + baselines (fast, filtered queries)
   useEffect(() => {
     if (!station || station.metricIds.length === 0) return;
     const supabase = createClient();
-    const cacheKey = `station-results-${stationId}`;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
 
-    type ResultRow = { id: string; athlete_id: string; metric_id: string; value: number; recorded_at: string };
+    (async () => {
+      // Query 1: Today's results only
+      const { data: todayData } = await supabase
+        .from("results")
+        .select("id, athlete_id, metric_id, value")
+        .in("metric_id", station!.metricIds)
+        .gte("recorded_at", todayISO)
+        .order("recorded_at", { ascending: false });
 
-    function processData(data: ResultRow[]) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayISO = today.toISOString();
-
-      // Cache metric lowerIsBetter lookup
-      const lowerMap: Record<string, boolean> = {};
-      metrics.forEach(m => { lowerMap[m.id] = m.lowerIsBetter; });
-
-      const allRes: Record<string, Record<string, { value: string; resultId: string }>> = {};
-      const allTimeBests: Record<string, Record<string, { value: string; resultId: string }>> = {};
-      const prev: Record<string, number> = {};
-
-      data.forEach((r) => {
-        const isToday = r.recorded_at >= todayISO;
-        if (isToday) {
+      if (todayData) {
+        const allRes: Record<string, Record<string, { value: string; resultId: string }>> = {};
+        todayData.forEach((r: { id: string; athlete_id: string; metric_id: string; value: number }) => {
           if (!allRes[r.metric_id]) allRes[r.metric_id] = {};
           if (!(r.athlete_id in allRes[r.metric_id])) {
             allRes[r.metric_id][r.athlete_id] = { value: String(r.value), resultId: r.id };
           }
-        } else {
-          if (r.metric_id === station!.metricIds[0] && !(r.athlete_id in prev)) {
-            prev[r.athlete_id] = Number(r.value);
-          }
-        }
-
-        // All-time bests: keep best value per metric per athlete
-        if (!allTimeBests[r.metric_id]) allTimeBests[r.metric_id] = {};
-        const existing = allTimeBests[r.metric_id][r.athlete_id];
-        const lower = lowerMap[r.metric_id] ?? false;
-        if (!existing || (lower ? r.value < parseFloat(existing.value) : r.value > parseFloat(existing.value))) {
-          allTimeBests[r.metric_id][r.athlete_id] = { value: String(r.value), resultId: r.id };
-        }
-      });
-
-      setAllResults(allRes);
-      setAllTimeResults(allTimeBests);
-      setBaselines(prev);
-    }
-
-    // Load from cache if fresh (< 5 min old)
-    const tsKey = `${cacheKey}-ts`;
-    try {
-      const cached = localStorage.getItem(cacheKey);
-      const cachedTs = Number(localStorage.getItem(tsKey) || 0);
-      if (cached && Date.now() - cachedTs < 5 * 60 * 1000) {
-        processData(JSON.parse(cached));
+        });
+        setAllResults(allRes);
       }
-    } catch {}
 
-    // Always fetch fresh data
-    (async () => {
-      const { data } = await supabase
+      // Query 2: Baselines — most recent pre-today result per athlete for primary metric
+      const { data: baselineData } = await supabase
         .from("results")
-        .select("id, athlete_id, metric_id, value, recorded_at")
-        .in("metric_id", station!.metricIds)
-        .order("recorded_at", { ascending: false });
+        .select("athlete_id, value")
+        .eq("metric_id", station!.metricIds[0])
+        .lt("recorded_at", todayISO)
+        .order("recorded_at", { ascending: false })
+        .limit(200);
 
-      if (data) {
-        processData(data as ResultRow[]);
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(data));
-          localStorage.setItem(tsKey, String(Date.now()));
-        } catch {}
+      if (baselineData) {
+        const prev: Record<string, number> = {};
+        baselineData.forEach((r: { athlete_id: string; value: number }) => {
+          if (!(r.athlete_id in prev)) prev[r.athlete_id] = Number(r.value);
+        });
+        setBaselines(prev);
+      }
+
+      // Query 3: All-time bests via RPC (returns only best per athlete per metric)
+      const { data: bestData } = await supabase
+        .rpc("best_results", { metric_ids: station!.metricIds });
+
+      if (bestData) {
+        const allTimeBests: Record<string, Record<string, { value: string; resultId: string }>> = {};
+        (bestData as { id: string; athlete_id: string; metric_id: string; value: number }[]).forEach((r) => {
+          if (!allTimeBests[r.metric_id]) allTimeBests[r.metric_id] = {};
+          allTimeBests[r.metric_id][r.athlete_id] = { value: String(r.value), resultId: r.id };
+        });
+        setAllTimeResults(allTimeBests);
       }
     })();
   }, [station?.metricIds.join(",")]);
