@@ -23,64 +23,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const supabase = createClient();
-
     let claimedInvite = false;
 
-    async function loadRole(userId: string) {
-      // Fire claim_invite in background — never block auth on it
-      if (!claimedInvite) {
-        claimedInvite = true;
-        (async () => { try { await supabase.rpc("claim_invite"); } catch {} })();
-      }
-
-      console.log("[auth] loadRole: fetching profile...");
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", userId)
-        .maybeSingle();
-      console.log("[auth] loadRole: role=", data?.role, "error=", error?.message);
-      setRole((data?.role as UserRole) ?? "athlete");
-    }
-
-    async function loadUser() {
-      try {
-        console.log("[auth] loadUser: calling getSession...");
-        const { data: { session } } = await supabase.auth.getSession();
-        const currentUser = session?.user ?? null;
-        console.log("[auth] loadUser: user=", currentUser?.email ?? "null");
-        setUser(currentUser);
-        if (currentUser) {
-          await loadRole(currentUser.id);
+    function loadRole(userId: string) {
+      // Fire in background — never block rendering
+      (async () => {
+        if (!claimedInvite) {
+          claimedInvite = true;
+          try { await supabase.rpc("claim_invite"); } catch {}
         }
-      } catch (e) {
-        console.error("[auth] loadUser error:", e);
-      }
-      console.log("[auth] loadUser: done, setting loading=false");
-      setLoading(false);
+        console.log("[auth] loadRole: fetching profile...");
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", userId)
+          .maybeSingle();
+        console.log("[auth] loadRole: role=", data?.role, "error=", error?.message);
+        setRole((data?.role as UserRole) ?? "athlete");
+      })();
     }
 
-    // Timeout: if auth takes more than 6s, stop blocking the app
-    const timeout = setTimeout(() => {
-      console.warn("[auth] TIMEOUT: forcing loading=false after 6s");
-      setLoading(false);
-    }, 6000);
-    loadUser().finally(() => clearTimeout(timeout));
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
+    // onAuthStateChange fires SIGNED_IN immediately — use it as primary auth source
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       const currentUser = session?.user ?? null;
       console.log("[auth] onAuthStateChange:", event, "user=", currentUser?.email ?? "null");
       setUser(currentUser);
-      // Only reload role on actual auth events, not token refreshes
-      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
-        if (currentUser) await loadRole(currentUser.id);
-      } else if (event === "SIGNED_OUT") {
+      setLoading(false); // Unblock app immediately — never wait for network
+      if (currentUser) {
+        loadRole(currentUser.id);
+      } else {
         setRole(null);
       }
-      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    // Safety: if onAuthStateChange never fires, unblock after 3s
+    const timeout = setTimeout(() => {
+      console.warn("[auth] TIMEOUT: forcing loading=false after 3s");
+      setLoading(false);
+    }, 3000);
+
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
