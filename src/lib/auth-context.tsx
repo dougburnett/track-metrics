@@ -33,32 +33,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (async () => { try { await supabase.rpc("claim_invite"); } catch {} })();
       }
 
-      const { data } = await supabase
+      console.log("[auth] loadRole: fetching profile...");
+      const { data, error } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", userId)
         .maybeSingle();
+      console.log("[auth] loadRole: role=", data?.role, "error=", error?.message);
       setRole((data?.role as UserRole) ?? "athlete");
     }
 
     async function loadUser() {
       try {
+        console.log("[auth] loadUser: calling getSession...");
         const { data: { session } } = await supabase.auth.getSession();
         const currentUser = session?.user ?? null;
+        console.log("[auth] loadUser: user=", currentUser?.email ?? "null");
         setUser(currentUser);
         if (currentUser) {
           await loadRole(currentUser.id);
         }
-      } catch {}
+      } catch (e) {
+        console.error("[auth] loadUser error:", e);
+      }
+      console.log("[auth] loadUser: done, setting loading=false");
       setLoading(false);
     }
 
     // Timeout: if auth takes more than 6s, stop blocking the app
-    const timeout = setTimeout(() => setLoading(false), 6000);
+    const timeout = setTimeout(() => {
+      console.warn("[auth] TIMEOUT: forcing loading=false after 6s");
+      setLoading(false);
+    }, 6000);
     loadUser().finally(() => clearTimeout(timeout));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       const currentUser = session?.user ?? null;
+      console.log("[auth] onAuthStateChange:", event, "user=", currentUser?.email ?? "null");
       setUser(currentUser);
       // Only reload role on actual auth events, not token refreshes
       if (event === "SIGNED_IN" || event === "USER_UPDATED") {

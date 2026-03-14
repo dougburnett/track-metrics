@@ -95,8 +95,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Load from Supabase once auth is ready and user exists
   useEffect(() => {
-    if (authLoading) return;
+    console.log("[store] effect: authLoading=", authLoading, "user=", user?.email ?? "null", "loadedFor=", loadedForUser.current);
+    if (authLoading) {
+      console.log("[store] waiting for auth...");
+      return;
+    }
     if (!user) {
+      console.log("[store] no user, clearing data");
       loadedForUser.current = null;
       setStations([]);
       setMetrics([]);
@@ -106,8 +111,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    if (loadedForUser.current === user.id) return;
+    if (loadedForUser.current === user.id) {
+      console.log("[store] already loaded for this user, skipping");
+      return;
+    }
     loadedForUser.current = user.id;
+    console.log("[store] loading data for user:", user.email);
 
     async function load() {
       try {
@@ -172,13 +181,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           gender: a.gender,
         })));
       } catch (e) {
-        console.error("Store load error:", e);
+        console.error("[store] load error:", e);
       }
+      console.log("[store] load complete, setting loading=false");
       setLoading(false);
     }
 
     // Timeout: never show skeleton for more than 8s
-    const timeout = setTimeout(() => setLoading(false), 8000);
+    const timeout = setTimeout(() => {
+      console.warn("[store] TIMEOUT: forcing loading=false after 8s");
+      setLoading(false);
+    }, 8000);
     load().finally(() => clearTimeout(timeout));
   }, [authLoading, user]);
 
