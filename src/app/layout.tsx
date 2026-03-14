@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Host_Grotesk, JetBrains_Mono } from "next/font/google";
 import { StoreProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth-context";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import "./globals.css";
 
 const hostGrotesk = Host_Grotesk({
@@ -17,6 +18,13 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Canby Track Metrics",
   description: "Record athletic performance metrics in real time",
+  manifest: "/manifest.json",
+  themeColor: "#141F54",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Track Metrics",
+  },
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
@@ -45,6 +53,7 @@ export default function RootLayout({
             <div className="mx-auto w-full max-w-2xl h-full">
               {children}
             </div>
+            <PWAInstallPrompt />
           </StoreProvider>
         </AuthProvider>
       </body>
