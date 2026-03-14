@@ -24,8 +24,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const supabase = createClient();
     let claimedInvite = false;
+    let roleLoadedFor: string | null = null;
 
     function loadRole(userId: string) {
+      if (roleLoadedFor === userId) return;
+      roleLoadedFor = userId;
       // Fire in background — never block rendering
       (async () => {
         if (!claimedInvite) {
@@ -43,12 +46,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })();
     }
 
+    // Safety: if onAuthStateChange never fires, unblock after 3s
+    let timeout: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      console.warn("[auth] TIMEOUT: forcing loading=false after 3s");
+      setLoading(false);
+    }, 3000);
+
     // onAuthStateChange fires SIGNED_IN immediately — use it as primary auth source
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       const currentUser = session?.user ?? null;
       console.log("[auth] onAuthStateChange:", event, "user=", currentUser?.email ?? "null");
+      if (timeout) { clearTimeout(timeout); timeout = null; }
       setUser(currentUser);
-      setLoading(false); // Unblock app immediately — never wait for network
+      setLoading(false);
       if (currentUser) {
         loadRole(currentUser.id);
       } else {
@@ -56,14 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // Safety: if onAuthStateChange never fires, unblock after 3s
-    const timeout = setTimeout(() => {
-      console.warn("[auth] TIMEOUT: forcing loading=false after 3s");
-      setLoading(false);
-    }, 3000);
-
     return () => {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, []);
