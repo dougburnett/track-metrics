@@ -39,7 +39,7 @@ function StationContent() {
   const [genderTab, setGenderTab] = useState<"M" | "F">("M");
   const [statsMode, setStatsMode] = useState<"today" | "allTime">(() => {
     if (typeof window !== "undefined") {
-      return (localStorage.getItem("stationStatsMode") as "today" | "allTime") || "today";
+      return (localStorage.getItem("stationStatsMode") as "today" | "allTime") || "allTime";
     }
     return "today";
   });
