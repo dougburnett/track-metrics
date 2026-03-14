@@ -27,10 +27,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let claimedInvite = false;
 
     async function loadRole(userId: string) {
-      // Claim any pending invite once per session
+      // Fire claim_invite in background — never block auth on it
       if (!claimedInvite) {
         claimedInvite = true;
-        try { await supabase.rpc("claim_invite"); } catch {}
+        (async () => { try { await supabase.rpc("claim_invite"); } catch {} })();
       }
 
       const { data } = await supabase
@@ -41,18 +41,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRole((data?.role as UserRole) ?? "athlete");
     }
 
-    // Use getSession() for instant local read (no network call)
     async function loadUser() {
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        await loadRole(currentUser.id);
-      }
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        if (currentUser) {
+          await loadRole(currentUser.id);
+        }
+      } catch {}
       setLoading(false);
     }
 
-    loadUser();
+    // Timeout: if auth takes more than 6s, stop blocking the app
+    const timeout = setTimeout(() => setLoading(false), 6000);
+    loadUser().finally(() => clearTimeout(timeout));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       const currentUser = session?.user ?? null;

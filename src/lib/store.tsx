@@ -110,78 +110,88 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loadedForUser.current = user.id;
 
     async function load() {
-      const [catRes, staRes, metRes, athRes, unitRes, smRes] = await Promise.all([
-        supabase.from("categories").select("*").order("name"),
-        supabase.from("stations").select("*").order("sort_order"),
-        supabase.from("metrics").select("*"),
-        supabase.from("athletes").select("*").order("first_name"),
-        supabase.from("units").select("*").order("name"),
-        supabase.from("station_metrics").select("*").order("sort_order"),
-      ]);
+      try {
+        const [catRes, staRes, metRes, athRes, unitRes, smRes] = await Promise.all([
+          supabase.from("categories").select("*").order("name"),
+          supabase.from("stations").select("*").order("sort_order"),
+          supabase.from("metrics").select("*"),
+          supabase.from("athletes").select("*").order("first_name"),
+          supabase.from("units").select("*").order("name"),
+          supabase.from("station_metrics").select("*").order("sort_order"),
+        ]);
 
-      if (catRes.error) console.error("categories error:", catRes.error);
-      if (staRes.error) console.error("stations error:", staRes.error);
-      if (metRes.error) console.error("metrics error:", metRes.error);
-      if (athRes.error) console.error("athletes error:", athRes.error);
-      if (unitRes.error) console.error("units error:", unitRes.error);
-      if (smRes.error) console.error("station_metrics error:", smRes.error);
+        const cats = catRes.data || [];
+        const stas = staRes.data || [];
+        const mets = metRes.data || [];
+        const aths = athRes.data || [];
+        const uns = unitRes.data || [];
+        const sms = smRes.data || [];
 
-      const cats = catRes.data || [];
-      const stas = staRes.data || [];
-      const mets = metRes.data || [];
-      const aths = athRes.data || [];
-      const uns = unitRes.data || [];
-      const sms = smRes.data || [];
+        // Build station_id -> metric_ids map
+        const stationMetricMap: Record<string, string[]> = {};
+        sms.forEach((sm: { station_id: string; metric_id: string }) => {
+          if (!stationMetricMap[sm.station_id]) stationMetricMap[sm.station_id] = [];
+          stationMetricMap[sm.station_id].push(sm.metric_id);
+        });
 
-      // Build station_id -> metric_ids map
-      const stationMetricMap: Record<string, string[]> = {};
-      sms.forEach((sm: { station_id: string; metric_id: string }) => {
-        if (!stationMetricMap[sm.station_id]) stationMetricMap[sm.station_id] = [];
-        stationMetricMap[sm.station_id].push(sm.metric_id);
-      });
+        const catMap: Record<string, string> = {};
+        cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
 
-      const catMap: Record<string, string> = {};
-      cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
-
-      setCategories(cats.map((c: { name: string }) => c.name));
-      setUnits(uns.map((u: { name: string }) => u.name));
-      setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string; location: string }) => ({
-        id: s.slug,
-        slug: s.slug,
-        name: s.name,
-        icon: s.icon,
-        description: s.description,
-        location: s.location || "",
-        metricIds: stationMetricMap[s.id] || [],
-      })));
-      setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; instructions: string; measurement_rules: string; gear: string; drills: string; lower_is_better: boolean; min_value: number | null; max_value: number | null; unit: string; inputs: MetricInput[] | null; formula: string }) => ({
-        id: m.id,
-        name: m.name,
-        acronym: m.acronym,
-        category: (catMap[m.category_id] || "").toLowerCase(),
-        instructions: m.instructions,
-        measurementRules: m.measurement_rules,
-        gear: m.gear,
-        drills: m.drills,
-        lowerIsBetter: m.lower_is_better,
-        minValue: m.min_value,
-        maxValue: m.max_value,
-        unit: m.unit || "",
-        inputs: m.inputs || null,
-        formula: m.formula || "",
-      })));
-      setAthletes(aths.map((a: { id: string; first_name: string; last_name: string; grade: number; gender: string }) => ({
-        id: a.id,
-        firstName: a.first_name,
-        lastName: a.last_name,
-        grade: a.grade,
-        gender: a.gender,
-      })));
+        setCategories(cats.map((c: { name: string }) => c.name));
+        setUnits(uns.map((u: { name: string }) => u.name));
+        setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string; location: string }) => ({
+          id: s.slug,
+          slug: s.slug,
+          name: s.name,
+          icon: s.icon,
+          description: s.description,
+          location: s.location || "",
+          metricIds: stationMetricMap[s.id] || [],
+        })));
+        setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; instructions: string; measurement_rules: string; gear: string; drills: string; lower_is_better: boolean; min_value: number | null; max_value: number | null; unit: string; inputs: MetricInput[] | null; formula: string }) => ({
+          id: m.id,
+          name: m.name,
+          acronym: m.acronym,
+          category: (catMap[m.category_id] || "").toLowerCase(),
+          instructions: m.instructions,
+          measurementRules: m.measurement_rules,
+          gear: m.gear,
+          drills: m.drills,
+          lowerIsBetter: m.lower_is_better,
+          minValue: m.min_value,
+          maxValue: m.max_value,
+          unit: m.unit || "",
+          inputs: m.inputs || null,
+          formula: m.formula || "",
+        })));
+        setAthletes(aths.map((a: { id: string; first_name: string; last_name: string; grade: number; gender: string }) => ({
+          id: a.id,
+          firstName: a.first_name,
+          lastName: a.last_name,
+          grade: a.grade,
+          gender: a.gender,
+        })));
+      } catch (e) {
+        console.error("Store load error:", e);
+      }
       setLoading(false);
     }
 
-    load();
+    // Timeout: never show skeleton for more than 8s
+    const timeout = setTimeout(() => setLoading(false), 8000);
+    load().finally(() => clearTimeout(timeout));
   }, [authLoading, user]);
+
+  // Retry loading when tab becomes visible if data is empty
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === "visible" && user && stations.length === 0 && !loading) {
+        loadedForUser.current = null; // allow reload
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [user, stations.length, loading]);
 
   // --- Station CRUD ---
   const saveStation = useCallback(async (station: Station) => {
