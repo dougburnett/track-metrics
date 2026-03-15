@@ -933,7 +933,7 @@ export default function AdminMetricsPage() {
         </div>
 
         <div className="flex-1 overflow-auto">
-          {metrics.map((metric) => {
+          {[...metrics].sort((a, b) => a.name.localeCompare(b.name)).map((metric) => {
             return (
               <div key={metric.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditMetric(metric)}>

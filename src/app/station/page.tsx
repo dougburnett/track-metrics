@@ -23,7 +23,7 @@ function StationContent() {
   const canRecord = isSuperAdmin || role === "admin";
 
   const station = stations.find(s => s.id === stationId);
-  const assignedMetrics = station ? station.metricIds.map(id => metrics.find(m => m.id === id)).filter(Boolean) as typeof metrics : [];
+  const assignedMetrics = station ? (station.metricIds.map(id => metrics.find(m => m.id === id)).filter(Boolean) as typeof metrics).sort((a, b) => a.name.localeCompare(b.name)) : [];
   const isMultiMetric = assignedMetrics.length > 1;
   const stationName = station?.name || "Station";
 
@@ -203,7 +203,11 @@ function StationContent() {
   };
 
   const handleSave = async () => {
-    if (!selectedId || !selectedMetricId || saving) return;
+    if (!selectedId || saving) return;
+    if (!selectedMetricId || assignedMetrics.length === 0) {
+      showToast({ message: "No metric assigned to this station. Add a metric in Settings first.", code: "R-000", type: "error" });
+      return;
+    }
 
     // Validate value before saving
     const numVal = isMultiInput ? computedResult : parseFloat(value);
@@ -550,6 +554,16 @@ function StationContent() {
           <button onClick={() => setShowInfo(false)} className="ml-auto cursor-pointer">
             <X size={14} className="text-[var(--muted-foreground)]" />
           </button>
+        </div>
+      )}
+
+      {/* No metrics warning */}
+      {assignedMetrics.length === 0 && (
+        <div className="flex items-center gap-2.5 px-4 py-3 bg-[var(--color-error)] border-b border-[var(--border)]">
+          <AlertTriangle size={16} className="text-[var(--destructive)] shrink-0" />
+          <p className="font-secondary text-sm font-medium text-[var(--destructive)]">
+            No metrics assigned to this station. Add metrics in Settings.
+          </p>
         </div>
       )}
 
