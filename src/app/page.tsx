@@ -317,7 +317,7 @@ export default function Dashboard() {
                     className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
                       athleteGenderFilter === tab.key
                         ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                        : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                        : "bg-[#D8D6CD] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                     }`}
                   >
                     {tab.label}
@@ -338,7 +338,7 @@ export default function Dashboard() {
                     className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
                       athleteGradeFilter === tab.key
                         ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                        : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                        : "bg-[#D8D6CD] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                     }`}
                   >
                     {tab.label}
@@ -408,7 +408,7 @@ export default function Dashboard() {
                             className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
                               lbGenderFilter === tab.key
                                 ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                                : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                                : "bg-[#D8D6CD] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                             }`}
                           >
                             {tab.label}
@@ -428,7 +428,7 @@ export default function Dashboard() {
                             className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
                               lbGradeFilter === tab.key
                                 ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                                : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                                : "bg-[#D8D6CD] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                             }`}
                           >
                             {tab.label}
@@ -465,7 +465,7 @@ export default function Dashboard() {
                                   {formatValue(entry.value, metric)} {metric.unit && !["seconds", "s"].includes(metric.unit) ? metric.unit : ""}
                                 </span>
                               </div>
-                              <div className="w-full h-2 bg-[var(--secondary)] rounded-full overflow-hidden">
+                              <div className="w-full h-2 bg-[#D8D6CD] rounded-full overflow-hidden">
                                 <div
                                   className="h-full rounded-full transition-all"
                                   style={{
@@ -505,7 +505,7 @@ export default function Dashboard() {
                         className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
                           lbGenderFilter === tab.key
                             ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                            : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                            : "bg-[#D8D6CD] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                         }`}
                       >
                         {tab.label}
@@ -525,7 +525,7 @@ export default function Dashboard() {
                         className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
                           lbGradeFilter === tab.key
                             ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                            : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                            : "bg-[#D8D6CD] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                         }`}
                       >
                         {tab.label}
@@ -534,7 +534,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-5">
+                <div className="grid grid-cols-2 gap-3">
                   {metrics
                     .filter((m) => leaderboardData[m.id] && leaderboardData[m.id].length > 0)
                     .sort((a, b) => a.name.localeCompare(b.name))
@@ -543,19 +543,11 @@ export default function Dashboard() {
                       const top5 = entries.slice(0, 5);
                       const bestValue = top5[0]?.value ?? 0;
                       return (
-                        <div key={metric.id}>
-                          <button
-                            onClick={() => setLbExpandedMetric(metric.id)}
-                            className="flex items-center justify-between w-full mb-2 cursor-pointer"
-                          >
-                            <h3 className="font-headline text-sm text-[var(--foreground)]">
-                              {metric.name}
-                            </h3>
-                            <span className="font-secondary text-[10px] text-[var(--primary)]">
-                              View all ({entries.length})
-                            </span>
-                          </button>
-                          <div className="flex flex-col gap-1.5">
+                        <div key={metric.id} className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] p-3 flex flex-col">
+                          <h3 className="font-headline text-sm text-[var(--foreground)] mb-2">
+                            {metric.name}
+                          </h3>
+                          <div className="flex flex-col gap-1.5 flex-1">
                             {top5.map((entry, i) => {
                               const pct = bestValue !== 0
                                 ? metric.lowerIsBetter
@@ -566,21 +558,21 @@ export default function Dashboard() {
                                 <button
                                   key={entry.athlete.id}
                                   onClick={() => router.push(`/athlete?id=${entry.athlete.id}`)}
-                                  className="flex items-center gap-3 cursor-pointer text-left"
+                                  className="flex items-center gap-2 cursor-pointer text-left"
                                 >
-                                  <span className="font-mono text-xs text-[var(--muted-foreground)] w-5 text-right shrink-0">
+                                  <span className="font-mono text-[10px] text-[var(--muted-foreground)] w-4 text-right shrink-0">
                                     {i + 1}
                                   </span>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between mb-0.5">
-                                      <span className="font-secondary text-xs text-[var(--foreground)] truncate">
+                                      <span className="font-secondary text-[10px] text-[var(--foreground)] truncate">
                                         {entry.athlete.firstName} {entry.athlete.lastName}
                                       </span>
-                                      <span className="font-mono text-[10px] text-[var(--foreground)] shrink-0 ml-2">
+                                      <span className="font-mono text-[9px] text-[var(--foreground)] shrink-0 ml-1">
                                         {formatValue(entry.value, metric)} {metric.unit && !["seconds", "s"].includes(metric.unit) ? metric.unit : ""}
                                       </span>
                                     </div>
-                                    <div className="w-full h-1.5 bg-[var(--secondary)] rounded-full overflow-hidden">
+                                    <div className="w-full h-1.5 bg-[#D8D6CD] rounded-full overflow-hidden">
                                       <div
                                         className="h-full rounded-full"
                                         style={{
@@ -595,11 +587,17 @@ export default function Dashboard() {
                               );
                             })}
                           </div>
+                          <button
+                            onClick={() => setLbExpandedMetric(metric.id)}
+                            className="mt-3 w-full py-1.5 rounded-[var(--radius-s)] border border-[var(--foreground)] text-[var(--foreground)] font-secondary text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity"
+                          >
+                            View all ({entries.length})
+                          </button>
                         </div>
                       );
                     })}
                   {metrics.filter((m) => leaderboardData[m.id]).length === 0 && (
-                    <div className="px-4 py-8 text-center">
+                    <div className="col-span-2 px-4 py-8 text-center">
                       <p className="font-secondary text-sm text-[var(--muted-foreground)]">No results yet</p>
                     </div>
                   )}
