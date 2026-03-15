@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Search, Settings, User, LayoutGrid, Users } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Search, Settings, User, LayoutGrid, Users, Trophy, ChevronLeft } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase";
+import type { Metric } from "@/lib/store";
 import { DynamicIcon } from "@/components/DynamicIcon";
 import { Skeleton } from "@/components/Skeleton";
 
@@ -13,12 +14,16 @@ export default function Dashboard() {
   const router = useRouter();
   const { stations, metrics, athletes, loading } = useStore();
   const { role } = useAuth();
-  const [activeTab, setActiveTab] = useState<"overview" | "athletes">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "athletes" | "leaderboards">("overview");
   const [search, setSearch] = useState("");
   const [genderTab, setGenderTab] = useState<"M" | "F">("M");
   const [athletesWithData, setAthletesWithData] = useState<Set<string>>(new Set());
   const [athleteGenderFilter, setAthleteGenderFilter] = useState<"all" | "M" | "F">("all");
   const [athleteGradeFilter, setAthleteGradeFilter] = useState<number | "all">("all");
+  const [lbGenderFilter, setLbGenderFilter] = useState<"all" | "M" | "F">("all");
+  const [lbGradeFilter, setLbGradeFilter] = useState<number | "all">("all");
+  const [lbExpandedMetric, setLbExpandedMetric] = useState<string | null>(null);
+  const [bestResults, setBestResults] = useState<{ athlete_id: string; metric_id: string; value: number }[]>([]);
 
   // Load which athletes have any results (distinct)
   useEffect(() => {
@@ -34,6 +39,59 @@ export default function Dashboard() {
         }
       });
   }, []);
+
+  // Load best results for leaderboards
+  useEffect(() => {
+    if (metrics.length === 0) return;
+    const supabase = createClient();
+    const metricIds = metrics.map((m) => m.id);
+    supabase.rpc("best_results", { metric_ids: metricIds }).then(({ data }: { data: { athlete_id: string; metric_id: string; value: number }[] | null }) => {
+      if (data) {
+        setBestResults(
+          (data as { athlete_id: string; metric_id: string; value: number }[]).map((r) => ({
+            athlete_id: r.athlete_id,
+            metric_id: r.metric_id,
+            value: Number(r.value),
+          }))
+        );
+      }
+    });
+  }, [metrics]);
+
+  // Compute leaderboard data per metric, filtered by gender/grade
+  const leaderboardData = useMemo(() => {
+    const athleteMap = new Map(athletes.map((a) => [a.id, a]));
+    const result: Record<string, { athlete: typeof athletes[0]; value: number }[]> = {};
+    for (const m of metrics) {
+      const entries = bestResults
+        .filter((r) => r.metric_id === m.id)
+        .map((r) => {
+          const athlete = athleteMap.get(r.athlete_id);
+          if (!athlete) return null;
+          if (lbGenderFilter !== "all" && athlete.gender !== lbGenderFilter) return null;
+          if (lbGradeFilter !== "all" && athlete.grade !== lbGradeFilter) return null;
+          return { athlete, value: r.value };
+        })
+        .filter(Boolean) as { athlete: typeof athletes[0]; value: number }[];
+      // Sort: lower is better → ascending, otherwise descending
+      entries.sort((a, b) => m.lowerIsBetter ? a.value - b.value : b.value - a.value);
+      if (entries.length > 0) {
+        result[m.id] = entries;
+      }
+    }
+    return result;
+  }, [bestResults, athletes, metrics, lbGenderFilter, lbGradeFilter]);
+
+  const formatValue = (value: number, metric: Metric) => {
+    if (metric.unit === "seconds" || metric.unit === "s") {
+      const mins = Math.floor(value / 60);
+      const secs = value % 60;
+      if (mins > 0) return `${mins}:${secs < 10 ? "0" : ""}${secs.toFixed(2)}`;
+      return `${secs.toFixed(2)}s`;
+    }
+    if (Number.isInteger(value)) return `${value}`;
+    return `${value.toFixed(2)}`;
+  };
 
   const filteredAthletes = athletes.filter((a) => {
     const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
@@ -233,7 +291,7 @@ export default function Dashboard() {
               )}
             </div>
           </>
-        ) : (
+        ) : activeTab === "athletes" ? (
           /* =================== ATHLETES TAB =================== */
           <div className="px-4 pb-6">
             <div className="sticky top-0 z-10 bg-[var(--background)] pb-2 pt-3">
@@ -315,7 +373,241 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-        )}
+        ) : activeTab === "leaderboards" ? (
+          /* =================== LEADERBOARDS TAB =================== */
+          <div className="px-4 pb-6">
+            {lbExpandedMetric ? (
+              /* === Full metric leaderboard === */
+              (() => {
+                const metric = metrics.find((m) => m.id === lbExpandedMetric);
+                if (!metric) return null;
+                const entries = leaderboardData[metric.id] || [];
+                const bestValue = entries[0]?.value ?? 0;
+                return (
+                  <>
+                    <div className="sticky top-0 z-10 bg-[var(--background)] pb-2 pt-3">
+                      <button
+                        onClick={() => setLbExpandedMetric(null)}
+                        className="flex items-center gap-1 text-[var(--primary)] font-secondary text-sm mb-2 cursor-pointer"
+                      >
+                        <ChevronLeft size={16} /> Back
+                      </button>
+                      <h2 className="font-headline text-lg text-[var(--foreground)] mb-2">
+                        {metric.name}
+                      </h2>
+                      {/* Filters */}
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {([
+                          { key: "all" as const, label: "All" },
+                          { key: "M" as const, label: "Boys" },
+                          { key: "F" as const, label: "Girls" },
+                        ]).map((tab) => (
+                          <button
+                            key={tab.key}
+                            onClick={() => setLbGenderFilter(tab.key)}
+                            className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
+                              lbGenderFilter === tab.key
+                                ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                                : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                        <div className="w-px h-5 bg-[var(--border)] mx-1" />
+                        {([
+                          { key: "all" as const, label: "All" },
+                          { key: 9, label: "Fr" },
+                          { key: 10, label: "So" },
+                          { key: 11, label: "Jr" },
+                          { key: 12, label: "Sr" },
+                        ]).map((tab) => (
+                          <button
+                            key={tab.key}
+                            onClick={() => setLbGradeFilter(tab.key)}
+                            className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
+                              lbGradeFilter === tab.key
+                                ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                                : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="font-secondary text-[10px] text-[var(--muted-foreground)] mt-1 block">
+                        {entries.length} athlete{entries.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      {entries.map((entry, i) => {
+                        const pct = bestValue !== 0
+                          ? metric.lowerIsBetter
+                            ? (bestValue / entry.value) * 100
+                            : (entry.value / bestValue) * 100
+                          : 0;
+                        return (
+                          <button
+                            key={entry.athlete.id}
+                            onClick={() => router.push(`/athlete?id=${entry.athlete.id}`)}
+                            className="flex items-center gap-3 cursor-pointer text-left"
+                          >
+                            <span className="font-mono text-xs text-[var(--muted-foreground)] w-6 text-right shrink-0">
+                              {i + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className="font-secondary text-sm text-[var(--foreground)] truncate">
+                                  {entry.athlete.firstName} {entry.athlete.lastName}
+                                </span>
+                                <span className="font-mono text-xs text-[var(--foreground)] shrink-0 ml-2">
+                                  {formatValue(entry.value, metric)} {metric.unit && !["seconds", "s"].includes(metric.unit) ? metric.unit : ""}
+                                </span>
+                              </div>
+                              <div className="w-full h-2 bg-[var(--secondary)] rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all"
+                                  style={{
+                                    width: `${Math.max(pct, 2)}%`,
+                                    backgroundColor: i === 0 ? "var(--primary)" : i < 3 ? "var(--primary)" : "var(--muted-foreground)",
+                                    opacity: i < 3 ? 1 : 0.5,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                      {entries.length === 0 && (
+                        <div className="px-4 py-8 text-center">
+                          <p className="font-secondary text-sm text-[var(--muted-foreground)]">No results for this filter</p>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()
+            ) : (
+              /* === Leaderboard overview: top 5 per metric === */
+              <>
+                <div className="sticky top-0 z-10 bg-[var(--background)] pb-2 pt-3">
+                  {/* Filters */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {([
+                      { key: "all" as const, label: "All" },
+                      { key: "M" as const, label: "Boys" },
+                      { key: "F" as const, label: "Girls" },
+                    ]).map((tab) => (
+                      <button
+                        key={tab.key}
+                        onClick={() => setLbGenderFilter(tab.key)}
+                        className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
+                          lbGenderFilter === tab.key
+                            ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                            : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                    <div className="w-px h-5 bg-[var(--border)] mx-1" />
+                    {([
+                      { key: "all" as const, label: "All" },
+                      { key: 9, label: "Fr" },
+                      { key: 10, label: "So" },
+                      { key: 11, label: "Jr" },
+                      { key: 12, label: "Sr" },
+                    ]).map((tab) => (
+                      <button
+                        key={tab.key}
+                        onClick={() => setLbGradeFilter(tab.key)}
+                        className={`px-3 py-1 rounded-full font-secondary text-xs font-semibold transition-colors cursor-pointer ${
+                          lbGradeFilter === tab.key
+                            ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                            : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-5">
+                  {metrics
+                    .filter((m) => leaderboardData[m.id] && leaderboardData[m.id].length > 0)
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((metric) => {
+                      const entries = leaderboardData[metric.id];
+                      const top5 = entries.slice(0, 5);
+                      const bestValue = top5[0]?.value ?? 0;
+                      return (
+                        <div key={metric.id}>
+                          <button
+                            onClick={() => setLbExpandedMetric(metric.id)}
+                            className="flex items-center justify-between w-full mb-2 cursor-pointer"
+                          >
+                            <h3 className="font-headline text-sm text-[var(--foreground)]">
+                              {metric.name}
+                            </h3>
+                            <span className="font-secondary text-[10px] text-[var(--primary)]">
+                              View all ({entries.length})
+                            </span>
+                          </button>
+                          <div className="flex flex-col gap-1.5">
+                            {top5.map((entry, i) => {
+                              const pct = bestValue !== 0
+                                ? metric.lowerIsBetter
+                                  ? (bestValue / entry.value) * 100
+                                  : (entry.value / bestValue) * 100
+                                : 0;
+                              return (
+                                <button
+                                  key={entry.athlete.id}
+                                  onClick={() => router.push(`/athlete?id=${entry.athlete.id}`)}
+                                  className="flex items-center gap-3 cursor-pointer text-left"
+                                >
+                                  <span className="font-mono text-xs text-[var(--muted-foreground)] w-5 text-right shrink-0">
+                                    {i + 1}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between mb-0.5">
+                                      <span className="font-secondary text-xs text-[var(--foreground)] truncate">
+                                        {entry.athlete.firstName} {entry.athlete.lastName}
+                                      </span>
+                                      <span className="font-mono text-[10px] text-[var(--foreground)] shrink-0 ml-2">
+                                        {formatValue(entry.value, metric)} {metric.unit && !["seconds", "s"].includes(metric.unit) ? metric.unit : ""}
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-[var(--secondary)] rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full rounded-full"
+                                        style={{
+                                          width: `${Math.max(pct, 2)}%`,
+                                          backgroundColor: i === 0 ? "var(--primary)" : i < 3 ? "var(--primary)" : "var(--muted-foreground)",
+                                          opacity: i < 3 ? 1 : 0.5,
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {metrics.filter((m) => leaderboardData[m.id]).length === 0 && (
+                    <div className="px-4 py-8 text-center">
+                      <p className="font-secondary text-sm text-[var(--muted-foreground)]">No results yet</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {/* Bottom Navigation */}
@@ -328,6 +620,15 @@ export default function Dashboard() {
         >
           <LayoutGrid size={20} />
           <span className="font-secondary text-[10px] font-semibold">Overview</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("leaderboards")}
+          className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 cursor-pointer transition-colors ${
+            activeTab === "leaderboards" ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"
+          }`}
+        >
+          <Trophy size={20} />
+          <span className="font-secondary text-[10px] font-semibold">Leaderboards</span>
         </button>
         <button
           onClick={() => setActiveTab("athletes")}
