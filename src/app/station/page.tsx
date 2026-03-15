@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Info, Search, Check, Pencil, Undo2, X, TrendingUp, TrendingDown } from "lucide-react";
+import { ArrowLeft, Info, Search, Check, Pencil, Undo2, X, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase";
@@ -19,7 +19,8 @@ function StationContent() {
   const inputRef = useRef<HTMLInputElement>(null);
   const { stations, metrics, athletes } = useStore();
   const { role } = useAuth();
-  const canRecord = role === "super_admin" || role === "admin";
+  const isSuperAdmin = role === "super_admin";
+  const canRecord = isSuperAdmin || role === "admin";
 
   const station = stations.find(s => s.id === stationId);
   const assignedMetrics = station ? station.metricIds.map(id => metrics.find(m => m.id === id)).filter(Boolean) as typeof metrics : [];
@@ -45,6 +46,14 @@ function StationContent() {
   });
   // allTimeResults: best-ever values per metric per athlete
   const [allTimeResults, setAllTimeResults] = useState<Record<string, Record<string, { value: string; resultId: string }>>>({});
+  // Toast notifications
+  const [toast, setToast] = useState<{ message: string; detail?: string; code?: string; type: "error" | "success" } | null>(null);
+  const toastTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = (t: typeof toast) => {
+    if (toastTimeout.current) clearTimeout(toastTimeout.current);
+    setToast(t);
+    toastTimeout.current = setTimeout(() => setToast(null), t?.type === "error" ? 8000 : 3000);
+  };
 
   // Initialize selectedMetricId when metrics load
   useEffect(() => {
@@ -195,29 +204,73 @@ function StationContent() {
 
   const handleSave = async () => {
     if (!selectedId || !selectedMetricId || saving) return;
+
+    // Validate value before saving
+    const numVal = isMultiInput ? computedResult : parseFloat(value);
+    if (numVal === null || numVal === undefined || isNaN(numVal)) {
+      showToast({ message: "Enter a valid number.", code: "R-001", type: "error" });
+      return;
+    }
+    if (assignedMetric?.minValue != null && numVal < assignedMetric.minValue) {
+      showToast({ message: `Value must be at least ${assignedMetric.minValue}.`, code: "R-002", type: "error" });
+      return;
+    }
+    if (assignedMetric?.maxValue != null && numVal > assignedMetric.maxValue) {
+      showToast({ message: `Value must be at most ${assignedMetric.maxValue}.`, code: "R-003", type: "error" });
+      return;
+    }
+
     setSaving(true);
     const supabase = createClient();
     const metricId = selectedMetricId;
     const existingResultId = resultIds[selectedId];
 
     const insertResult = async (val: number, extras?: Record<string, unknown>) => {
-      const { data } = await supabase.from("results").insert({
+      const { data, error } = await supabase.from("results").insert({
         athlete_id: selectedId,
         metric_id: metricId,
         value: val,
         unit: assignedMetric?.acronym || "",
         ...extras,
       }).select("id").maybeSingle();
-      return data?.id || null;
+      if (error) {
+        showToast({
+          message: "Could not save result. Check your connection and try again.",
+          detail: `INSERT failed: ${error.message} (code: ${error.code})`,
+          code: "R-010",
+          type: "error",
+        });
+        return null;
+      }
+      if (!data?.id) {
+        showToast({
+          message: "Save may have failed. No confirmation received.",
+          detail: "INSERT returned no ID — possible RLS policy issue.",
+          code: "R-011",
+          type: "error",
+        });
+        return null;
+      }
+      return data.id;
     };
 
     const updateOrInsert = async (val: number, extras?: Record<string, unknown>) => {
       if (existingResultId) {
-        const { data: updated } = await supabase.from("results")
+        const { data: updated, error } = await supabase.from("results")
           .update({ value: val, ...extras })
           .eq("id", existingResultId)
           .select("id").maybeSingle();
+        if (error) {
+          showToast({
+            message: "Could not update result. Check your connection and try again.",
+            detail: `UPDATE failed: ${error.message} (code: ${error.code})`,
+            code: "R-020",
+            type: "error",
+          });
+          return null;
+        }
         if (updated) return existingResultId;
+        // Update returned nothing — row may have been deleted, fall through to insert
       }
       return insertResult(val, extras);
     };
@@ -240,9 +293,9 @@ function StationContent() {
             },
           }));
           updateAllTime(metricId, selectedId, computedResult, savedId);
+          setSelectedId(null);
+          setSubValues({});
         }
-        setSelectedId(null);
-        setSubValues({});
       } else if (value) {
         const savedId = await updateOrInsert(parseFloat(value));
         if (savedId) {
@@ -254,10 +307,18 @@ function StationContent() {
             },
           }));
           updateAllTime(metricId, selectedId, parseFloat(value), savedId);
+          setSelectedId(null);
+          setValue("");
         }
-        setSelectedId(null);
-        setValue("");
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast({
+        message: "Something went wrong. Please try again.",
+        detail: `Unexpected: ${msg}`,
+        code: "R-099",
+        type: "error",
+      });
     } finally {
       setSaving(false);
     }
@@ -587,6 +648,33 @@ function StationContent() {
             className="w-full max-w-[280px] h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-base font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? "Saving..." : (selectedId && resultIds[selectedId] ? "Update Result" : "Save Result")}
+          </button>
+        </div>
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={`flex items-start gap-2.5 px-4 py-3 border-b border-[var(--border)] ${toast.type === "error" ? "bg-[var(--color-error)]" : "bg-[var(--color-success)]"}`}>
+          {toast.type === "error" && <AlertTriangle size={16} className="text-[var(--destructive)] shrink-0 mt-0.5" />}
+          <div className="flex-1 min-w-0">
+            <p className={`font-secondary text-sm font-medium ${toast.type === "error" ? "text-[var(--destructive)]" : "text-[var(--color-success-foreground)]"}`}>
+              {toast.message}
+              {toast.code && <span className="font-mono text-xs opacity-70 ml-1.5">({toast.code})</span>}
+            </p>
+            {isSuperAdmin && toast.detail && (
+              <p className="font-mono text-xs text-[var(--destructive)] opacity-80 mt-0.5">{toast.detail}</p>
+            )}
+            {toast.type === "error" && (
+              <a
+                href={`mailto:douglas.burnett@k12.canby.or.us?subject=Bug Report ${toast.code || ""}&body=${encodeURIComponent(`Error: ${toast.code || "unknown"}\n${toast.detail || toast.message}\n\nSteps to reproduce:\n`)}`}
+                className="font-secondary text-xs text-[var(--destructive)] underline mt-1 inline-block"
+              >
+                Report bug
+              </a>
+            )}
+          </div>
+          <button onClick={() => setToast(null)} className="cursor-pointer shrink-0 mt-0.5">
+            <X size={14} className={toast.type === "error" ? "text-[var(--destructive)]" : "text-[var(--color-success-foreground)]"} />
           </button>
         </div>
       )}
