@@ -53,7 +53,7 @@ function AthleteContent() {
   const [editingResultId, setEditingResultId] = useState<string | null>(null);
   const [editResultValue, setEditResultValue] = useState("");
   const [savingResult, setSavingResult] = useState(false);
-  const [rankFilter, setRankFilter] = useState<RankFilter>("team");
+  const [rankFilter, setRankFilter] = useState<RankFilter>("gradeGender");
   const [allBestResults, setAllBestResults] = useState<{ athlete_id: string; metric_id: string; value: number }[]>([]);
 
   const athlete: Athlete | undefined = athletes.find((a) => a.id === athleteId);
