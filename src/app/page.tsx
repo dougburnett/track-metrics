@@ -604,30 +604,26 @@ export default function Dashboard() {
                                     <button
                                       key={entry.athlete.id}
                                       onClick={() => router.push(`/athlete?id=${entry.athlete.id}`)}
-                                      className="flex items-center gap-2 cursor-pointer text-left"
+                                      className="cursor-pointer text-left"
                                     >
-                                      <span className="font-mono text-[10px] text-[var(--muted-foreground)] w-4 text-right shrink-0">
-                                        {i + 1}
-                                      </span>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-0.5">
-                                          <span className="font-secondary text-[10px] text-[var(--foreground)] truncate">
-                                            {entry.athlete.firstName} {entry.athlete.lastName}
-                                          </span>
-                                          <span className="font-mono text-[9px] text-[var(--foreground)] shrink-0 ml-1">
-                                            {formatValue(entry.value, metric)} {metric.unit && !["seconds", "s"].includes(metric.unit) ? metric.unit : ""}
-                                          </span>
-                                        </div>
-                                        <div className="w-full h-1.5 bg-[#D8D6CD] rounded-full overflow-hidden">
-                                          <div
-                                            className="h-full rounded-full"
-                                            style={{
-                                              width: `${Math.max(pct, 2)}%`,
-                                              backgroundColor: i === 0 ? "var(--primary)" : i < 3 ? "var(--primary)" : "var(--muted-foreground)",
-                                              opacity: i < 3 ? 1 : 0.5,
-                                            }}
-                                          />
-                                        </div>
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <span className="font-secondary text-[10px] text-[var(--foreground)] truncate">
+                                          <span className="font-mono text-[var(--muted-foreground)] mr-1.5">{i + 1}</span>
+                                          {entry.athlete.firstName} {entry.athlete.lastName}
+                                        </span>
+                                        <span className="font-mono text-[9px] text-[var(--foreground)] shrink-0 ml-1">
+                                          {formatValue(entry.value, metric)} {metric.unit && !["seconds", "s"].includes(metric.unit) ? metric.unit : ""}
+                                        </span>
+                                      </div>
+                                      <div className="w-full h-1.5 bg-[#D8D6CD] rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full rounded-full"
+                                          style={{
+                                            width: `${Math.max(pct, 2)}%`,
+                                            backgroundColor: i === 0 ? "var(--primary)" : i < 3 ? "var(--primary)" : "var(--muted-foreground)",
+                                            opacity: i < 3 ? 1 : 0.5,
+                                          }}
+                                        />
                                       </div>
                                     </button>
                                   );
