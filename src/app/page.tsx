@@ -581,9 +581,9 @@ export default function Dashboard() {
                           const top5 = entries.slice(0, 5);
                           const bestValue = top5[0]?.value ?? 0;
                           return (
-                            <div key={metric.id} className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] p-3 flex flex-col">
-                              <div className="flex items-start justify-between mb-2">
-                                <h4 className="font-headline text-sm text-[var(--foreground)] pl-6">
+                            <div key={metric.id} className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] p-4 flex flex-col">
+                              <div className="flex items-start justify-between mb-3">
+                                <h4 className="font-headline text-sm text-[var(--foreground)]">
                                   {metric.name}
                                 </h4>
                                 <button
