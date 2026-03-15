@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [lbGenderFilter, setLbGenderFilter] = useState<"all" | "M" | "F">("all");
   const [lbGradeFilter, setLbGradeFilter] = useState<number | "all">("all");
   const [lbExpandedMetric, setLbExpandedMetric] = useState<string | null>(null);
+  const [lbCategoryFilter, setLbCategoryFilter] = useState<string>("all");
   const [bestResults, setBestResults] = useState<{ athlete_id: string; metric_id: string; value: number }[]>([]);
 
   // Load which athletes have any results (distinct)
@@ -92,6 +93,30 @@ export default function Dashboard() {
     if (Number.isInteger(value)) return `${value}`;
     return `${value.toFixed(2)}`;
   };
+
+  // Get unique categories from metrics that have leaderboard data
+  const lbCategories = useMemo(() => {
+    const cats = new Set<string>();
+    metrics.forEach((m) => {
+      if (leaderboardData[m.id] && m.category) cats.add(m.category);
+    });
+    return Array.from(cats).sort((a, b) => a.localeCompare(b));
+  }, [metrics, leaderboardData]);
+
+  // Filter and group metrics by category for leaderboard
+  const lbGroupedMetrics = useMemo(() => {
+    const filtered = metrics
+      .filter((m) => leaderboardData[m.id] && leaderboardData[m.id].length > 0)
+      .filter((m) => lbCategoryFilter === "all" || m.category === lbCategoryFilter)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const groups: Record<string, typeof metrics> = {};
+    for (const m of filtered) {
+      const cat = m.category || "Other";
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(m);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [metrics, leaderboardData, lbCategoryFilter]);
 
   const filteredAthletes = athletes.filter((a) => {
     const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
@@ -531,73 +556,91 @@ export default function Dashboard() {
                         {tab.label}
                       </button>
                     ))}
+                    <select
+                      value={lbCategoryFilter}
+                      onChange={(e) => setLbCategoryFilter(e.target.value)}
+                      className="ml-auto px-2 py-1 rounded-[var(--radius-s)] border border-[var(--border)] bg-[var(--card)] font-secondary text-xs text-[var(--foreground)] cursor-pointer outline-none"
+                    >
+                      <option value="all">All Categories</option>
+                      {lbCategories.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  {metrics
-                    .filter((m) => leaderboardData[m.id] && leaderboardData[m.id].length > 0)
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((metric) => {
-                      const entries = leaderboardData[metric.id];
-                      const top5 = entries.slice(0, 5);
-                      const bestValue = top5[0]?.value ?? 0;
-                      return (
-                        <div key={metric.id} className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] p-3 flex flex-col">
-                          <h3 className="font-headline text-sm text-[var(--foreground)] mb-2">
-                            {metric.name}
-                          </h3>
-                          <div className="flex flex-col gap-1.5 flex-1">
-                            {top5.map((entry, i) => {
-                              const pct = bestValue !== 0
-                                ? metric.lowerIsBetter
-                                  ? (bestValue / entry.value) * 100
-                                  : (entry.value / bestValue) * 100
-                                : 0;
-                              return (
+                <div className="flex flex-col gap-5">
+                  {lbGroupedMetrics.map(([category, catMetrics]) => (
+                    <div key={category}>
+                      <h3 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
+                        {category}
+                      </h3>
+                      <div className="grid grid-cols-2 gap-3">
+                        {catMetrics.map((metric) => {
+                          const entries = leaderboardData[metric.id];
+                          const top5 = entries.slice(0, 5);
+                          const bestValue = top5[0]?.value ?? 0;
+                          return (
+                            <div key={metric.id} className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)] p-3 flex flex-col">
+                              <div className="flex items-start justify-between mb-2">
+                                <h4 className="font-headline text-sm text-[var(--foreground)] pl-6">
+                                  {metric.name}
+                                </h4>
                                 <button
-                                  key={entry.athlete.id}
-                                  onClick={() => router.push(`/athlete?id=${entry.athlete.id}`)}
-                                  className="flex items-center gap-2 cursor-pointer text-left"
+                                  onClick={() => setLbExpandedMetric(metric.id)}
+                                  className="shrink-0 px-2 py-0.5 rounded-[var(--radius-s)] border border-[var(--foreground)] text-[var(--foreground)] font-secondary text-[9px] font-semibold cursor-pointer hover:opacity-80 transition-opacity"
                                 >
-                                  <span className="font-mono text-[10px] text-[var(--muted-foreground)] w-4 text-right shrink-0">
-                                    {i + 1}
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between mb-0.5">
-                                      <span className="font-secondary text-[10px] text-[var(--foreground)] truncate">
-                                        {entry.athlete.firstName} {entry.athlete.lastName}
-                                      </span>
-                                      <span className="font-mono text-[9px] text-[var(--foreground)] shrink-0 ml-1">
-                                        {formatValue(entry.value, metric)} {metric.unit && !["seconds", "s"].includes(metric.unit) ? metric.unit : ""}
-                                      </span>
-                                    </div>
-                                    <div className="w-full h-1.5 bg-[#D8D6CD] rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full rounded-full"
-                                        style={{
-                                          width: `${Math.max(pct, 2)}%`,
-                                          backgroundColor: i === 0 ? "var(--primary)" : i < 3 ? "var(--primary)" : "var(--muted-foreground)",
-                                          opacity: i < 3 ? 1 : 0.5,
-                                        }}
-                                      />
-                                    </div>
-                                  </div>
+                                  View all
                                 </button>
-                              );
-                            })}
-                          </div>
-                          <button
-                            onClick={() => setLbExpandedMetric(metric.id)}
-                            className="mt-3 w-full py-1.5 rounded-[var(--radius-s)] border border-[var(--foreground)] text-[var(--foreground)] font-secondary text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity"
-                          >
-                            View all ({entries.length})
-                          </button>
-                        </div>
-                      );
-                    })}
-                  {metrics.filter((m) => leaderboardData[m.id]).length === 0 && (
-                    <div className="col-span-2 px-4 py-8 text-center">
+                              </div>
+                              <div className="flex flex-col gap-1.5 flex-1">
+                                {top5.map((entry, i) => {
+                                  const pct = bestValue !== 0
+                                    ? metric.lowerIsBetter
+                                      ? (bestValue / entry.value) * 100
+                                      : (entry.value / bestValue) * 100
+                                    : 0;
+                                  return (
+                                    <button
+                                      key={entry.athlete.id}
+                                      onClick={() => router.push(`/athlete?id=${entry.athlete.id}`)}
+                                      className="flex items-center gap-2 cursor-pointer text-left"
+                                    >
+                                      <span className="font-mono text-[10px] text-[var(--muted-foreground)] w-4 text-right shrink-0">
+                                        {i + 1}
+                                      </span>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-0.5">
+                                          <span className="font-secondary text-[10px] text-[var(--foreground)] truncate">
+                                            {entry.athlete.firstName} {entry.athlete.lastName}
+                                          </span>
+                                          <span className="font-mono text-[9px] text-[var(--foreground)] shrink-0 ml-1">
+                                            {formatValue(entry.value, metric)} {metric.unit && !["seconds", "s"].includes(metric.unit) ? metric.unit : ""}
+                                          </span>
+                                        </div>
+                                        <div className="w-full h-1.5 bg-[#D8D6CD] rounded-full overflow-hidden">
+                                          <div
+                                            className="h-full rounded-full"
+                                            style={{
+                                              width: `${Math.max(pct, 2)}%`,
+                                              backgroundColor: i === 0 ? "var(--primary)" : i < 3 ? "var(--primary)" : "var(--muted-foreground)",
+                                              opacity: i < 3 ? 1 : 0.5,
+                                            }}
+                                          />
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  {lbGroupedMetrics.length === 0 && (
+                    <div className="px-4 py-8 text-center">
                       <p className="font-secondary text-sm text-[var(--muted-foreground)]">No results yet</p>
                     </div>
                   )}
