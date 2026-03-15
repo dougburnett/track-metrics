@@ -328,6 +328,15 @@ function StationContent() {
     }
   };
 
+  const hasUnsavedEntry = selectedId !== null && (value !== "" || Object.values(subValues).some(v => v !== ""));
+
+  const handleBack = () => {
+    if (hasUnsavedEntry) {
+      if (!confirm("You have an unsaved result. Leave without saving?")) return;
+    }
+    router.push("/");
+  };
+
   const handleUndo = () => {
     setSelectedId(null);
     setValue("");
@@ -534,7 +543,7 @@ function StationContent() {
     <div className="flex flex-col h-full bg-[var(--background)] overflow-x-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
-        <button onClick={() => router.push("/")} className="cursor-pointer">
+        <button onClick={handleBack} className="cursor-pointer">
           <ArrowLeft size={24} className="text-[var(--foreground)]" />
         </button>
         <h1 className="font-headline text-lg text-[var(--foreground)]">
@@ -567,27 +576,31 @@ function StationContent() {
         </div>
       )}
 
-      {/* Metric Selector for multi-metric stations */}
+      {/* Metric Tabs for multi-metric stations */}
       {isMultiMetric && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--card)] border-b border-[var(--border)]">
-          <span className="font-secondary text-xs font-medium text-[var(--muted-foreground)] shrink-0">Metric:</span>
-          <select
-            value={selectedMetricId}
-            onChange={(e) => {
-              setSelectedMetricId(e.target.value);
-              setSelectedId(null);
-              setValue("");
-              setSubValues({});
-            }}
-            className="flex-1 h-9 rounded-[var(--radius-m)] bg-[var(--background)] border border-[var(--input)] px-3 font-secondary text-sm font-medium text-[var(--foreground)] outline-none cursor-pointer"
-          >
-            {assignedMetrics.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({m.acronym})
-              </option>
-            ))}
-          </select>
-          <span className="font-mono text-xs text-[var(--muted-foreground)] shrink-0">
+        <div className="flex items-center gap-1 px-3 py-2 bg-[var(--card)] border-b border-[var(--border)] overflow-x-auto">
+          {assignedMetrics.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => {
+                if (hasUnsavedEntry) {
+                  if (!confirm("You have an unsaved result. Switch metric without saving?")) return;
+                }
+                setSelectedMetricId(m.id);
+                setSelectedId(null);
+                setValue("");
+                setSubValues({});
+              }}
+              className={`px-3 py-1.5 rounded-full font-mono text-xs font-bold transition-colors cursor-pointer shrink-0 ${
+                selectedMetricId === m.id
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                  : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+              }`}
+            >
+              {m.acronym}
+            </button>
+          ))}
+          <span className="font-mono text-xs text-[var(--muted-foreground)] shrink-0 ml-auto">
             {completed}/{total}
           </span>
         </div>

@@ -86,8 +86,9 @@ export default function AdminMetricsPage() {
   };
 
   // --- Station handlers ---
-  const handleEditStation = (station: Station) => { setStationForm({ ...station }); setView("editStation"); };
-  const handleNewStation = () => { setStationForm({ id: `station-${Date.now()}`, name: "", icon: "zap", description: "", location: "", metricIds: [] }); setView("editStation"); };
+  const [originalStation, setOriginalStation] = useState<Station | null>(null);
+  const handleEditStation = (station: Station) => { setStationForm({ ...station }); setOriginalStation({ ...station }); setView("editStation"); };
+  const handleNewStation = () => { const s = { id: `station-${Date.now()}`, name: "", icon: "zap", description: "", location: "", metricIds: [] }; setStationForm(s); setOriginalStation({ ...s }); setView("editStation"); };
   const handleSaveStation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stationForm.name || saving) return;
@@ -354,15 +355,28 @@ export default function AdminMetricsPage() {
   if (view === "editStation") {
     const assignedStationMetrics = stationForm.metricIds.map(id => metrics.find(m => m.id === id)).filter(Boolean) as typeof metrics;
     const availableMetrics = metrics.filter(m => !stationForm.metricIds.includes(m.id));
+    const isStationDirty = originalStation && (
+      stationForm.name !== originalStation.name ||
+      stationForm.description !== originalStation.description ||
+      stationForm.location !== originalStation.location ||
+      stationForm.icon !== originalStation.icon ||
+      JSON.stringify(stationForm.metricIds) !== JSON.stringify(originalStation.metricIds)
+    );
+    const handleStationBack = () => {
+      if (isSuperAdmin && isStationDirty) {
+        if (!confirm("You have unsaved changes. Leave without saving?")) return;
+      }
+      setView("stations");
+    };
     return (
       <div className="flex flex-col h-full bg-[var(--background)]">
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
-          <button onClick={() => setView("stations")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
+          <button onClick={handleStationBack} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
           <h1 className="font-headline text-lg text-[var(--foreground)]">
             {isSuperAdmin ? (stations.find((s) => s.id === stationForm.id) ? "Edit Station" : "New Station") : "Station Details"}
           </h1>
         </div>
-        <form onSubmit={handleSaveStation} className="flex-1 overflow-auto p-4 flex flex-col gap-4">
+        <form id="station-form" onSubmit={handleSaveStation} className="flex-1 overflow-auto p-4 pb-24 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Station Name</label>
             <input value={stationForm.name} onChange={(e) => updateStation("name", e.target.value)} placeholder="e.g. Station 1" disabled={!isSuperAdmin} className={inputCls + (!isSuperAdmin ? " opacity-60" : "")} />
@@ -445,15 +459,15 @@ export default function AdminMetricsPage() {
               </div>
             </div>
           )}
-          <div className="flex gap-3 pt-2 pb-6">
-            <button type="button" onClick={() => setView("stations")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">{isSuperAdmin ? "Cancel" : "Back"}</button>
-            {isSuperAdmin && (
-              <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
-                {saving ? "Saving..." : "Save Station"}
-              </button>
-            )}
-          </div>
         </form>
+        <div className="flex gap-3 px-4 py-3 border-t border-[var(--border)] bg-[var(--background)]">
+          <button type="button" onClick={handleStationBack} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">{isSuperAdmin ? "Cancel" : "Back"}</button>
+          {isSuperAdmin && (
+            <button type="submit" form="station-form" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
+              {saving ? "Saving..." : "Save Station"}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
