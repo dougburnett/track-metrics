@@ -89,9 +89,15 @@ export default function AdminMetricsPage() {
   const [originalStation, setOriginalStation] = useState<Station | null>(null);
   const handleEditStation = (station: Station) => { setStationForm({ ...station }); setOriginalStation({ ...station }); setView("editStation"); };
   const handleNewStation = () => { const s = { id: `station-${Date.now()}`, name: "", icon: "zap", description: "", location: "", metricIds: [] }; setStationForm(s); setOriginalStation({ ...s }); setView("editStation"); };
+  const [stationError, setStationError] = useState("");
   const handleSaveStation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stationForm.name || saving) return;
+    if (stationForm.metricIds.length === 0) {
+      setStationError("Add at least one metric before saving.");
+      return;
+    }
+    setStationError("");
     setSaving(true);
     await saveStation(stationForm);
     setSaving(false);
@@ -460,6 +466,11 @@ export default function AdminMetricsPage() {
             </div>
           )}
         </form>
+        {stationError && (
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-error)]">
+            <span className="font-secondary text-sm font-medium text-[var(--destructive)]">{stationError}</span>
+          </div>
+        )}
         <div className="flex gap-3 px-4 py-3 border-t border-[var(--border)] bg-[var(--background)]">
           <button type="button" onClick={handleStationBack} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">{isSuperAdmin ? "Cancel" : "Back"}</button>
           {isSuperAdmin && (
