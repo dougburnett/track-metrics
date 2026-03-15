@@ -28,7 +28,8 @@ interface Invite {
 
 export default function AdminMetricsPage() {
   const router = useRouter();
-  const { role, loading: authLoading } = useAuth();
+  const { role, user, loading: authLoading } = useAuth();
+  const isSuperAdmin = role === "super_admin";
   const {
     stations, metrics, athletes, categories, units, loading,
     saveStation, deleteStation: removeStation,
@@ -172,6 +173,7 @@ export default function AdminMetricsPage() {
   const [pendingInvites, setPendingInvites] = useState<Invite[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
   const [teamLoading, setTeamLoading] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const loadTeamData = async () => {
     setTeamLoading(true);
@@ -219,6 +221,16 @@ export default function AdminMetricsPage() {
     const supabase = createClient();
     await supabase.from("profiles").update({ role: newRole }).eq("id", profileId);
     setMembers((prev) => prev.map((m) => m.id === profileId ? { ...m, role: newRole } : m));
+  };
+
+  const handleRemoveMember = async (profileId: string) => {
+    if (profileId === user?.id) return;
+    if (!confirm("Remove this member? Their profile will be deleted and they will lose access.")) return;
+    setRemovingMemberId(profileId);
+    const supabase = createClient();
+    await supabase.from("profiles").delete().eq("id", profileId);
+    setMembers((prev) => prev.filter((m) => m.id !== profileId));
+    setRemovingMemberId(null);
   };
 
   const inputCls = "h-10 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-4 font-secondary text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none focus:border-[var(--primary)]";
@@ -347,21 +359,21 @@ export default function AdminMetricsPage() {
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
           <button onClick={() => setView("stations")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
           <h1 className="font-headline text-lg text-[var(--foreground)]">
-            {stations.find((s) => s.id === stationForm.id) ? "Edit Station" : "New Station"}
+            {isSuperAdmin ? (stations.find((s) => s.id === stationForm.id) ? "Edit Station" : "New Station") : "Station Details"}
           </h1>
         </div>
         <form onSubmit={handleSaveStation} className="flex-1 overflow-auto p-4 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Station Name</label>
-            <input value={stationForm.name} onChange={(e) => updateStation("name", e.target.value)} placeholder="e.g. Station 1" className={inputCls} />
+            <input value={stationForm.name} onChange={(e) => updateStation("name", e.target.value)} placeholder="e.g. Station 1" disabled={!isSuperAdmin} className={inputCls + (!isSuperAdmin ? " opacity-60" : "")} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Description</label>
-            <input value={stationForm.description} onChange={(e) => updateStation("description", e.target.value)} placeholder="e.g. Reactive Strength Index" className={inputCls} />
+            <input value={stationForm.description} onChange={(e) => updateStation("description", e.target.value)} placeholder="e.g. Reactive Strength Index" disabled={!isSuperAdmin} className={inputCls + (!isSuperAdmin ? " opacity-60" : "")} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Location</label>
-            <input value={stationForm.location} onChange={(e) => updateStation("location", e.target.value)} placeholder="e.g. Near the long jump pit" className={inputCls} />
+            <input value={stationForm.location} onChange={(e) => updateStation("location", e.target.value)} placeholder="e.g. Near the long jump pit" disabled={!isSuperAdmin} className={inputCls + (!isSuperAdmin ? " opacity-60" : "")} />
           </div>
 
           {/* Metric assignment — multi-select */}
@@ -378,19 +390,21 @@ export default function AdminMetricsPage() {
                       <span className="font-secondary text-sm font-medium text-[var(--foreground)]">{m.name}</span>
                       <span className="font-mono text-xs text-[var(--muted-foreground)] ml-1.5">{m.acronym}</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => updateStation("metricIds", stationForm.metricIds.filter(id => id !== m.id))}
-                      className="p-1.5 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors shrink-0"
-                    >
-                      <X size={14} className="text-[var(--destructive)]" />
-                    </button>
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => updateStation("metricIds", stationForm.metricIds.filter(id => id !== m.id))}
+                        className="p-1.5 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors shrink-0"
+                      >
+                        <X size={14} className="text-[var(--destructive)]" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             )}
             {/* Add metric dropdown */}
-            {availableMetrics.length > 0 && (
+            {isSuperAdmin && availableMetrics.length > 0 && (
               <select
                 value=""
                 onChange={(e) => {
@@ -406,34 +420,38 @@ export default function AdminMetricsPage() {
             )}
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Icon</label>
-            <div className="grid grid-cols-6 gap-2">
-              {AVAILABLE_ICONS.map((icon) => (
-                <button
-                  key={icon}
-                  type="button"
-                  onClick={() => updateStation("icon", icon)}
-                  className={`flex items-center justify-center w-full aspect-square rounded-full border transition-colors cursor-pointer ${
-                    stationForm.icon === icon
-                      ? "border-[var(--primary)] bg-[var(--primary)]"
-                      : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]"
-                  }`}
-                >
-                  <DynamicIcon
-                    name={icon}
-                    size={20}
-                    className={stationForm.icon === icon ? "text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)]"}
-                  />
-                </button>
-              ))}
+          {isSuperAdmin && (
+            <div className="flex flex-col gap-1.5">
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Icon</label>
+              <div className="grid grid-cols-6 gap-2">
+                {AVAILABLE_ICONS.map((icon) => (
+                  <button
+                    key={icon}
+                    type="button"
+                    onClick={() => updateStation("icon", icon)}
+                    className={`flex items-center justify-center w-full aspect-square rounded-full border transition-colors cursor-pointer ${
+                      stationForm.icon === icon
+                        ? "border-[var(--primary)] bg-[var(--primary)]"
+                        : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]"
+                    }`}
+                  >
+                    <DynamicIcon
+                      name={icon}
+                      size={20}
+                      className={stationForm.icon === icon ? "text-[var(--primary-foreground)]" : "text-[var(--muted-foreground)]"}
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           <div className="flex gap-3 pt-2 pb-6">
-            <button type="button" onClick={() => setView("stations")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">Cancel</button>
-            <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
-              {saving ? "Saving..." : "Save Station"}
-            </button>
+            <button type="button" onClick={() => setView("stations")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">{isSuperAdmin ? "Cancel" : "Back"}</button>
+            {isSuperAdmin && (
+              <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
+                {saving ? "Saving..." : "Save Station"}
+              </button>
+            )}
           </div>
         </form>
       </div>
@@ -447,11 +465,13 @@ export default function AdminMetricsPage() {
         <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-            <h1 className="font-headline text-lg text-[var(--foreground)]">Edit Stations</h1>
+            <h1 className="font-headline text-lg text-[var(--foreground)]">Stations</h1>
           </div>
-          <button onClick={handleNewStation} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
-            <Plus size={18} /> Add
-          </button>
+          {isSuperAdmin && (
+            <button onClick={handleNewStation} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
+              <Plus size={18} /> Add
+            </button>
+          )}
         </div>
         <div className="flex-1 overflow-auto">
           {stations.map((station) => {
@@ -473,12 +493,16 @@ export default function AdminMetricsPage() {
                     {station.location ? ` · ${station.location}` : ""}
                   </div>
                 </div>
-                <button onClick={() => handleEditStation(station)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
-                  <Pencil size={16} className="text-[var(--muted-foreground)]" />
-                </button>
-                <button onClick={() => handleDeleteStation(station.id)} disabled={deletingId === station.id} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                  <Trash2 size={16} className={deletingId === station.id ? "animate-pulse text-[var(--muted-foreground)]" : "text-[var(--destructive)]"} />
-                </button>
+                {isSuperAdmin && (
+                  <>
+                    <button onClick={() => handleEditStation(station)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
+                      <Pencil size={16} className="text-[var(--muted-foreground)]" />
+                    </button>
+                    <button onClick={() => handleDeleteStation(station.id)} disabled={deletingId === station.id} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                      <Trash2 size={16} className={deletingId === station.id ? "animate-pulse text-[var(--muted-foreground)]" : "text-[var(--destructive)]"} />
+                    </button>
+                  </>
+                )}
               </div>
             );
           })}
@@ -507,17 +531,23 @@ export default function AdminMetricsPage() {
               ) : (
                 <>
                   <span className="flex-1 font-secondary text-sm font-medium text-[var(--foreground)]">{cat}</span>
-                  <button onClick={() => handleStartRename(idx)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors"><Pencil size={16} className="text-[var(--muted-foreground)]" /></button>
-                  <button onClick={() => handleDeleteCategory(idx)} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors"><Trash2 size={16} className="text-[var(--destructive)]" /></button>
+                  {isSuperAdmin && (
+                    <>
+                      <button onClick={() => handleStartRename(idx)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors"><Pencil size={16} className="text-[var(--muted-foreground)]" /></button>
+                      <button onClick={() => handleDeleteCategory(idx)} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors"><Trash2 size={16} className="text-[var(--destructive)]" /></button>
+                    </>
+                  )}
                 </>
               )}
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-3 p-4 border-t border-[var(--border)]">
-          <input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddCategory()} placeholder="New category name..." className={"flex-1 " + inputCls} />
-          <button onClick={handleAddCategory} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer"><Plus size={18} /> Add</button>
-        </div>
+        {isSuperAdmin && (
+          <div className="flex items-center gap-3 p-4 border-t border-[var(--border)]">
+            <input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddCategory()} placeholder="New category name..." className={"flex-1 " + inputCls} />
+            <button onClick={handleAddCategory} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer"><Plus size={18} /> Add</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -542,17 +572,23 @@ export default function AdminMetricsPage() {
               ) : (
                 <>
                   <span className="flex-1 font-secondary text-sm font-medium text-[var(--foreground)]">{u}</span>
-                  <button onClick={() => handleStartRenameUnit(idx)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors"><Pencil size={16} className="text-[var(--muted-foreground)]" /></button>
-                  <button onClick={() => handleDeleteUnit(idx)} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors"><Trash2 size={16} className="text-[var(--destructive)]" /></button>
+                  {isSuperAdmin && (
+                    <>
+                      <button onClick={() => handleStartRenameUnit(idx)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors"><Pencil size={16} className="text-[var(--muted-foreground)]" /></button>
+                      <button onClick={() => handleDeleteUnit(idx)} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors"><Trash2 size={16} className="text-[var(--destructive)]" /></button>
+                    </>
+                  )}
                 </>
               )}
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-3 p-4 border-t border-[var(--border)]">
-          <input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddUnit()} placeholder="New unit name..." className={"flex-1 " + inputCls} />
-          <button onClick={handleAddUnit} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer"><Plus size={18} /> Add</button>
-        </div>
+        {isSuperAdmin && (
+          <div className="flex items-center gap-3 p-4 border-t border-[var(--border)]">
+            <input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAddUnit()} placeholder="New unit name..." className={"flex-1 " + inputCls} />
+            <button onClick={handleAddUnit} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer"><Plus size={18} /> Add</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -564,25 +600,25 @@ export default function AdminMetricsPage() {
         <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border)]">
           <button onClick={() => setView("metrics")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
           <h1 className="font-headline text-lg text-[var(--foreground)]">
-            {editingId ? "Edit Metric" : "New Metric"}
+            {isSuperAdmin ? (editingId ? "Edit Metric" : "New Metric") : "Metric Details"}
           </h1>
         </div>
         <form onSubmit={handleSaveMetric} className="flex-1 overflow-auto overflow-x-hidden p-4 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Metric Name</label>
-            <input value={form.name} onChange={(e) => updateForm("name", e.target.value)} placeholder="e.g. Reactive Strength Index" className={inputCls} />
+            <input value={form.name} onChange={(e) => updateForm("name", e.target.value)} placeholder="e.g. Reactive Strength Index" disabled={!isSuperAdmin} className={inputCls + (!isSuperAdmin ? " opacity-60" : "")} />
           </div>
           <div className="flex gap-3">
             <div className="flex-1 flex flex-col gap-1.5">
               <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Acronym</label>
-              <input value={form.acronym} onChange={(e) => updateForm("acronym", e.target.value)} placeholder="e.g. RSI" className={inputCls} />
+              <input value={form.acronym} onChange={(e) => updateForm("acronym", e.target.value)} placeholder="e.g. RSI" disabled={!isSuperAdmin} className={inputCls + (!isSuperAdmin ? " opacity-60" : "")} />
             </div>
             <div className="flex-1 flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Category</label>
-                <button type="button" onClick={() => setView("categories")} className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer">Edit list</button>
+                {isSuperAdmin && <button type="button" onClick={() => setView("categories")} className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer">Edit list</button>}
               </div>
-              <select value={form.category} onChange={(e) => updateForm("category", e.target.value)} className={inputCls + " appearance-none cursor-pointer"}>
+              <select value={form.category} onChange={(e) => updateForm("category", e.target.value)} disabled={!isSuperAdmin} className={inputCls + " appearance-none cursor-pointer" + (!isSuperAdmin ? " opacity-60" : "")}>
                 <option value="">Select...</option>
                 {categories.map((cat) => (<option key={cat} value={cat.toLowerCase()}>{cat}</option>))}
               </select>
@@ -591,33 +627,35 @@ export default function AdminMetricsPage() {
 
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Instructions</label>
-            <textarea value={form.instructions} onChange={(e) => updateForm("instructions", e.target.value)} placeholder="How to perform this measurement..." rows={3} className={textareaCls} />
+            <textarea value={form.instructions} onChange={(e) => updateForm("instructions", e.target.value)} placeholder="How to perform this measurement..." rows={3} disabled={!isSuperAdmin} className={textareaCls + (!isSuperAdmin ? " opacity-60" : "")} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Measurement Rules</label>
-            <textarea value={form.measurementRules} onChange={(e) => updateForm("measurementRules", e.target.value)} placeholder="Rules and standards..." rows={3} className={textareaCls} />
+            <textarea value={form.measurementRules} onChange={(e) => updateForm("measurementRules", e.target.value)} placeholder="Rules and standards..." rows={3} disabled={!isSuperAdmin} className={textareaCls + (!isSuperAdmin ? " opacity-60" : "")} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Gear Required</label>
-            <input value={form.gear} onChange={(e) => updateForm("gear", e.target.value)} placeholder="e.g. Contact mat, Vertec" className={inputCls} />
+            <input value={form.gear} onChange={(e) => updateForm("gear", e.target.value)} placeholder="e.g. Contact mat, Vertec" disabled={!isSuperAdmin} className={inputCls + (!isSuperAdmin ? " opacity-60" : "")} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Drill Suggestions</label>
-            <input value={form.drills} onChange={(e) => updateForm("drills", e.target.value)} placeholder="e.g. Depth jumps, Pogo hops" className={inputCls} />
+            <input value={form.drills} onChange={(e) => updateForm("drills", e.target.value)} placeholder="e.g. Depth jumps, Pogo hops" disabled={!isSuperAdmin} className={inputCls + (!isSuperAdmin ? " opacity-60" : "")} />
           </div>
 
           {/* Multi-Input Configuration */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Value Inputs</label>
-              <button
-                type="button"
-                onClick={() => {
-                  const current = form.inputs || [];
-                  updateForm("inputs", [...current, { label: "" }]);
-                }}
-                className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer"
-              >+ Add input</button>
+              {isSuperAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = form.inputs || [];
+                    updateForm("inputs", [...current, { label: "" }]);
+                  }}
+                  className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer"
+                >+ Add input</button>
+              )}
             </div>
             {!form.inputs || form.inputs.length === 0 ? (
               <p className="font-secondary text-xs text-[var(--muted-foreground)]">Single value input (default). Add inputs for multi-value metrics.</p>
@@ -634,18 +672,21 @@ export default function AdminMetricsPage() {
                         updateForm("inputs", next);
                       }}
                       placeholder={`Label for input ${indexToVar(i)}`}
-                      className={inputCls + " flex-1 min-w-0"}
+                      disabled={!isSuperAdmin}
+                      className={inputCls + " flex-1 min-w-0" + (!isSuperAdmin ? " opacity-60" : "")}
                     />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = form.inputs!.filter((_, j) => j !== i);
-                        updateForm("inputs", next.length === 0 ? null : next);
-                      }}
-                      className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors shrink-0"
-                    >
-                      <Trash2 size={14} className="text-[var(--destructive)]" />
-                    </button>
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = form.inputs!.filter((_, j) => j !== i);
+                          updateForm("inputs", next.length === 0 ? null : next);
+                        }}
+                        className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors shrink-0"
+                      >
+                        <Trash2 size={14} className="text-[var(--destructive)]" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -660,7 +701,8 @@ export default function AdminMetricsPage() {
                 value={form.formula}
                 onChange={(e) => updateForm("formula", e.target.value)}
                 placeholder={`e.g. ${form.inputs.map((_, i) => indexToVar(i)).join(" + ")}`}
-                className={inputCls}
+                disabled={!isSuperAdmin}
+                className={inputCls + (!isSuperAdmin ? " opacity-60" : "")}
               />
               <p className="font-secondary text-xs text-[var(--muted-foreground)]">
                 Variables: {form.inputs.map((inp, i) => `${indexToVar(i)} = ${inp.label || `Input ${i + 1}`}`).join(", ")}.
@@ -674,8 +716,9 @@ export default function AdminMetricsPage() {
             <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Lower is better</label>
             <button
               type="button"
-              onClick={() => updateForm("lowerIsBetter", !form.lowerIsBetter)}
-              className={`w-12 h-7 rounded-full transition-colors cursor-pointer ${form.lowerIsBetter ? "bg-[var(--primary)]" : "bg-[var(--input)]"}`}
+              onClick={() => isSuperAdmin && updateForm("lowerIsBetter", !form.lowerIsBetter)}
+              disabled={!isSuperAdmin}
+              className={`w-12 h-7 rounded-full transition-colors ${isSuperAdmin ? "cursor-pointer" : "opacity-60"} ${form.lowerIsBetter ? "bg-[var(--primary)]" : "bg-[var(--input)]"}`}
             >
               <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform mx-1 ${form.lowerIsBetter ? "translate-x-5" : "translate-x-0"}`} />
             </button>
@@ -685,11 +728,11 @@ export default function AdminMetricsPage() {
           <div className="flex gap-3">
             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
               <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Min Value</label>
-              <input type="number" value={form.minValue ?? ""} onChange={(e) => updateForm("minValue", e.target.value === "" ? null : Number(e.target.value))} placeholder="Optional" className={inputCls + " w-full"} />
+              <input type="number" value={form.minValue ?? ""} onChange={(e) => updateForm("minValue", e.target.value === "" ? null : Number(e.target.value))} placeholder="Optional" disabled={!isSuperAdmin} className={inputCls + " w-full" + (!isSuperAdmin ? " opacity-60" : "")} />
             </div>
             <div className="flex-1 min-w-0 flex flex-col gap-1.5">
               <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Max Value</label>
-              <input type="number" value={form.maxValue ?? ""} onChange={(e) => updateForm("maxValue", e.target.value === "" ? null : Number(e.target.value))} placeholder="Optional" className={inputCls + " w-full"} />
+              <input type="number" value={form.maxValue ?? ""} onChange={(e) => updateForm("maxValue", e.target.value === "" ? null : Number(e.target.value))} placeholder="Optional" disabled={!isSuperAdmin} className={inputCls + " w-full" + (!isSuperAdmin ? " opacity-60" : "")} />
             </div>
           </div>
 
@@ -697,19 +740,21 @@ export default function AdminMetricsPage() {
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Unit</label>
-              <button type="button" onClick={() => setView("units")} className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer">Edit list</button>
+              {isSuperAdmin && <button type="button" onClick={() => setView("units")} className="font-secondary text-xs text-[var(--primary)] hover:underline cursor-pointer">Edit list</button>}
             </div>
-            <select value={form.unit} onChange={(e) => updateForm("unit", e.target.value)} className={inputCls + " appearance-none cursor-pointer"}>
+            <select value={form.unit} onChange={(e) => updateForm("unit", e.target.value)} disabled={!isSuperAdmin} className={inputCls + " appearance-none cursor-pointer" + (!isSuperAdmin ? " opacity-60" : "")}>
               <option value="">None</option>
               {units.map((u) => (<option key={u} value={u}>{u}</option>))}
             </select>
           </div>
 
           <div className="flex gap-3 pt-2 pb-6">
-            <button type="button" onClick={() => setView("metrics")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">Cancel</button>
-            <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
-              {saving ? "Saving..." : "Save Metric"}
-            </button>
+            <button type="button" onClick={() => setView("metrics")} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--border)] font-secondary text-sm font-medium text-[var(--foreground)] hover:bg-[var(--secondary)] transition-colors cursor-pointer">{isSuperAdmin ? "Cancel" : "Back"}</button>
+            {isSuperAdmin && (
+              <button type="submit" disabled={saving} className="flex-1 h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50">
+                {saving ? "Saving..." : "Save Metric"}
+              </button>
+            )}
           </div>
         </form>
       </div>
@@ -728,67 +773,69 @@ export default function AdminMetricsPage() {
         </div>
 
         <div className="flex-1 overflow-auto p-4 flex flex-col gap-6">
-          {/* Invite form */}
-          <div className="flex flex-col gap-2">
-            <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
-              Invite New Member
-            </h2>
-            <div className="flex gap-2">
-              <input
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
-                placeholder="email@example.com"
-                type="email"
-                className={inputCls + " flex-1 min-w-0"}
-              />
-              <select
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value as UserRole)}
-                className={inputCls + " appearance-none cursor-pointer shrink-0 w-auto"}
-              >
-                <option value="athlete">Athlete</option>
-                <option value="admin">Admin</option>
-                <option value="super_admin">Super Admin</option>
-              </select>
-            </div>
-            <button
-              onClick={handleSendInvite}
-              disabled={inviteSending}
-              className="flex items-center justify-center gap-1.5 h-10 w-full rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
-            >
-              <Plus size={14} />
-              {inviteSending ? "Creating..." : "Create Invite"}
-            </button>
-            {inviteMsg && (
-              <p className="font-secondary text-xs text-[var(--muted-foreground)]">{inviteMsg}</p>
-            )}
-            {inviteLink && (
-              <div className="flex items-center gap-2">
+          {/* Invite form — super_admin only */}
+          {isSuperAdmin && (
+            <div className="flex flex-col gap-2">
+              <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+                Invite New Member
+              </h2>
+              <div className="flex gap-2">
                 <input
-                  readOnly
-                  value={inviteLink}
-                  className={inputCls + " flex-1 min-w-0 text-[var(--muted-foreground)]"}
-                  onFocus={(e) => e.target.select()}
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendInvite()}
+                  placeholder="email@example.com"
+                  type="email"
+                  className={inputCls + " flex-1 min-w-0"}
                 />
-                <button
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(inviteLink);
-                      setInviteMsg("Copied!");
-                    } catch {}
-                  }}
-                  className="shrink-0 w-10 h-10 flex items-center justify-center rounded-[var(--radius-pill)] bg-[var(--secondary)] hover:bg-[var(--border)] transition-colors cursor-pointer"
-                  title="Copy link"
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as UserRole)}
+                  className={inputCls + " appearance-none cursor-pointer shrink-0 w-auto"}
                 >
-                  <Copy size={16} className="text-[var(--foreground)]" />
-                </button>
+                  <option value="athlete">Athlete</option>
+                  <option value="admin">Admin</option>
+                  <option value="super_admin">Super Admin</option>
+                </select>
               </div>
-            )}
-          </div>
+              <button
+                onClick={handleSendInvite}
+                disabled={inviteSending}
+                className="flex items-center justify-center gap-1.5 h-10 w-full rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+              >
+                <Plus size={14} />
+                {inviteSending ? "Creating..." : "Create Invite"}
+              </button>
+              {inviteMsg && (
+                <p className="font-secondary text-xs text-[var(--muted-foreground)]">{inviteMsg}</p>
+              )}
+              {inviteLink && (
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={inviteLink}
+                    className={inputCls + " flex-1 min-w-0 text-[var(--muted-foreground)]"}
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(inviteLink);
+                        setInviteMsg("Copied!");
+                      } catch {}
+                    }}
+                    className="shrink-0 w-10 h-10 flex items-center justify-center rounded-[var(--radius-pill)] bg-[var(--secondary)] hover:bg-[var(--border)] transition-colors cursor-pointer"
+                    title="Copy link"
+                  >
+                    <Copy size={16} className="text-[var(--foreground)]" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Pending invites */}
-          {pendingInvites.length > 0 && (
+          {/* Pending invites — super_admin only */}
+          {isSuperAdmin && pendingInvites.length > 0 && (
             <div className="flex flex-col gap-2">
               <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
                 Pending Invites ({pendingInvites.length})
@@ -823,25 +870,44 @@ export default function AdminMetricsPage() {
               <p className="font-secondary text-sm text-[var(--muted-foreground)]">Loading...</p>
             ) : (
               <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-m)]">
-                {members.map((member) => (
-                  <div key={member.id} className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-secondary text-sm font-medium text-[var(--foreground)] truncate">
-                        {member.full_name || member.email}
+                {members.map((member) => {
+                  const isCurrentUser = member.id === user?.id;
+                  return (
+                    <div key={member.id} className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-secondary text-sm font-medium text-[var(--foreground)] truncate">
+                          {member.full_name || member.email}{isCurrentUser ? " (you)" : ""}
+                        </div>
+                        <div className="font-secondary text-xs text-[var(--muted-foreground)] truncate">{member.email}</div>
                       </div>
-                      <div className="font-secondary text-xs text-[var(--muted-foreground)] truncate">{member.email}</div>
+                      {isSuperAdmin ? (
+                          <select
+                            value={member.role}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === "__remove__") {
+                                e.target.value = member.role;
+                                handleRemoveMember(member.id);
+                              } else {
+                                handleChangeRole(member.id, val as UserRole);
+                              }
+                            }}
+                            disabled={removingMemberId === member.id}
+                            className={"h-8 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-3 font-secondary text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)] appearance-none cursor-pointer" + (removingMemberId === member.id ? " opacity-40" : "")}
+                          >
+                            <option value="athlete">Athlete</option>
+                            <option value="admin">Admin</option>
+                            <option value="super_admin">Super Admin</option>
+                            <option value="__remove__">Remove Member</option>
+                          </select>
+                      ) : (
+                        <span className="font-secondary text-xs text-[var(--muted-foreground)]">
+                          {member.role === "super_admin" ? "Super Admin" : member.role === "admin" ? "Admin" : "Athlete"}
+                        </span>
+                      )}
                     </div>
-                    <select
-                      value={member.role}
-                      onChange={(e) => handleChangeRole(member.id, e.target.value as UserRole)}
-                      className="h-8 rounded-[var(--radius-pill)] bg-[var(--background)] border border-[var(--input)] px-3 font-secondary text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)] appearance-none cursor-pointer"
-                    >
-                      <option value="athlete">Athlete</option>
-                      <option value="admin">Admin</option>
-                      <option value="super_admin">Super Admin</option>
-                    </select>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -859,9 +925,11 @@ export default function AdminMetricsPage() {
             <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
             <h1 className="font-headline text-lg text-[var(--foreground)]">Metrics</h1>
           </div>
-          <button onClick={handleNewMetric} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
-            <Plus size={18} /> Add
-          </button>
+          {isSuperAdmin && (
+            <button onClick={handleNewMetric} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
+              <Plus size={18} /> Add
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto">
@@ -878,12 +946,16 @@ export default function AdminMetricsPage() {
                     {metric.gear ? ` · ${metric.gear}` : ""}
                   </div>
                 </div>
-                <button onClick={() => handleEditMetric(metric)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
-                  <Pencil size={16} className="text-[var(--muted-foreground)]" />
-                </button>
-                <button onClick={() => handleDeleteMetric(metric.id)} disabled={deletingId === metric.id} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                  <Trash2 size={16} className={deletingId === metric.id ? "animate-pulse text-[var(--muted-foreground)]" : "text-[var(--destructive)]"} />
-                </button>
+                {isSuperAdmin && (
+                  <>
+                    <button onClick={() => handleEditMetric(metric)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
+                      <Pencil size={16} className="text-[var(--muted-foreground)]" />
+                    </button>
+                    <button onClick={() => handleDeleteMetric(metric.id)} disabled={deletingId === metric.id} className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                      <Trash2 size={16} className={deletingId === metric.id ? "animate-pulse text-[var(--muted-foreground)]" : "text-[var(--destructive)]"} />
+                    </button>
+                  </>
+                )}
               </div>
             );
           })}
@@ -907,7 +979,7 @@ export default function AdminMetricsPage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="font-headline text-sm text-[var(--foreground)]">Stations</div>
-            <div className="font-secondary text-xs text-[var(--muted-foreground)]">{stations.length} station{stations.length !== 1 ? "s" : ""}</div>
+            <div className="font-secondary text-xs text-[var(--muted-foreground)]">{stations.length} station{stations.length !== 1 ? "s" : ""}{!isSuperAdmin ? " · View only" : ""}</div>
           </div>
           <ChevronRight size={18} className="text-[var(--muted-foreground)]" />
         </button>
@@ -918,7 +990,7 @@ export default function AdminMetricsPage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="font-headline text-sm text-[var(--foreground)]">Metrics</div>
-            <div className="font-secondary text-xs text-[var(--muted-foreground)]">{metrics.length} metric{metrics.length !== 1 ? "s" : ""}</div>
+            <div className="font-secondary text-xs text-[var(--muted-foreground)]">{metrics.length} metric{metrics.length !== 1 ? "s" : ""}{!isSuperAdmin ? " · View only" : ""}</div>
           </div>
           <ChevronRight size={18} className="text-[var(--muted-foreground)]" />
         </button>
@@ -940,7 +1012,7 @@ export default function AdminMetricsPage() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="font-headline text-sm text-[var(--foreground)]">Team</div>
-            <div className="font-secondary text-xs text-[var(--muted-foreground)]">Invite & manage members</div>
+            <div className="font-secondary text-xs text-[var(--muted-foreground)]">{isSuperAdmin ? "Invite & manage members" : "View members · View only"}</div>
           </div>
           <ChevronRight size={18} className="text-[var(--muted-foreground)]" />
         </button>
