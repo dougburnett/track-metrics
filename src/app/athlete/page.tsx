@@ -33,6 +33,9 @@ interface MetricSummary {
 }
 
 const fmtVal = (n: number) => parseFloat(n.toFixed(2));
+const GRADE_LABELS: Record<number, string> = { 9: "Freshmen", 10: "Sophomores", 11: "Juniors", 12: "Seniors" };
+const GRADE_SHORT: Record<number, string> = { 9: "Fr", 10: "So", 11: "Jr", 12: "Sr" };
+type RankFilter = "team" | "gender" | "grade" | "gradeGender";
 
 function AthleteContent() {
   const router = useRouter();
@@ -50,6 +53,8 @@ function AthleteContent() {
   const [editingResultId, setEditingResultId] = useState<string | null>(null);
   const [editResultValue, setEditResultValue] = useState("");
   const [savingResult, setSavingResult] = useState(false);
+  const [rankFilter, setRankFilter] = useState<RankFilter>("team");
+  const [allBestResults, setAllBestResults] = useState<{ athlete_id: string; metric_id: string; value: number }[]>([]);
 
   const athlete: Athlete | undefined = athletes.find((a) => a.id === athleteId);
 
@@ -88,6 +93,82 @@ function AthleteContent() {
 
     loadResults();
   }, [athleteId, metrics]);
+
+  // Load all athletes' best results for ranking
+  useEffect(() => {
+    if (results.length === 0) return;
+    const metricIds = [...new Set(results.map(r => r.metricId))];
+    if (metricIds.length === 0) return;
+    const supabase = createClient();
+    (async () => {
+      const { data } = await supabase.rpc("best_results", { metric_ids: metricIds });
+      if (data) {
+        setAllBestResults(
+          (data as { athlete_id: string; metric_id: string; value: number }[]).map(r => ({
+            athlete_id: r.athlete_id,
+            metric_id: r.metric_id,
+            value: Number(r.value),
+          }))
+        );
+      }
+    })();
+  }, [results]);
+
+  // Compute rankings per metric based on filter
+  const rankings: Record<string, number> = useMemo(() => {
+    if (!athlete || allBestResults.length === 0) return {};
+    const out: Record<string, number> = {};
+    const metricIds = [...new Set(allBestResults.map(r => r.metric_id))];
+
+    for (const metricId of metricIds) {
+      const metric = metrics.find(m => m.id === metricId);
+      const lowerIsBetter = metric?.lowerIsBetter ?? false;
+
+      // Filter athletes based on rank filter
+      let eligibleAthleteIds: Set<string>;
+      if (rankFilter === "team") {
+        eligibleAthleteIds = new Set(athletes.map(a => a.id));
+      } else if (rankFilter === "gender") {
+        eligibleAthleteIds = new Set(athletes.filter(a => a.gender === athlete.gender).map(a => a.id));
+      } else if (rankFilter === "grade") {
+        eligibleAthleteIds = new Set(athletes.filter(a => a.grade === athlete.grade).map(a => a.id));
+      } else {
+        eligibleAthleteIds = new Set(athletes.filter(a => a.grade === athlete.grade && a.gender === athlete.gender).map(a => a.id));
+      }
+
+      const metricResults = allBestResults
+        .filter(r => r.metric_id === metricId && eligibleAthleteIds.has(r.athlete_id))
+        .sort((a, b) => lowerIsBetter ? a.value - b.value : b.value - a.value);
+
+      const idx = metricResults.findIndex(r => r.athlete_id === athlete.id);
+      if (idx !== -1) {
+        out[metricId] = idx + 1;
+      }
+    }
+    return out;
+  }, [athlete, allBestResults, athletes, metrics, rankFilter]);
+
+  const rankTotal: Record<string, number> = useMemo(() => {
+    if (!athlete || allBestResults.length === 0) return {};
+    const out: Record<string, number> = {};
+    const metricIds = [...new Set(allBestResults.map(r => r.metric_id))];
+
+    for (const metricId of metricIds) {
+      let eligibleAthleteIds: Set<string>;
+      if (rankFilter === "team") {
+        eligibleAthleteIds = new Set(athletes.map(a => a.id));
+      } else if (rankFilter === "gender") {
+        eligibleAthleteIds = new Set(athletes.filter(a => a.gender === athlete.gender).map(a => a.id));
+      } else if (rankFilter === "grade") {
+        eligibleAthleteIds = new Set(athletes.filter(a => a.grade === athlete.grade).map(a => a.id));
+      } else {
+        eligibleAthleteIds = new Set(athletes.filter(a => a.grade === athlete.grade && a.gender === athlete.gender).map(a => a.id));
+      }
+
+      out[metricId] = allBestResults.filter(r => r.metric_id === metricId && eligibleAthleteIds.has(r.athlete_id)).length;
+    }
+    return out;
+  }, [athlete, allBestResults, athletes, rankFilter]);
 
   // Build metric summaries
   const summaries: MetricSummary[] = useMemo(() => {
@@ -320,16 +401,47 @@ function AthleteContent() {
         {!loading && filteredSummaries.length > 0 ? (
           <>
             <div className="px-4 pb-3">
-              <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-3">
+              <h2 className="font-primary text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
                 Key Metrics
               </h2>
+              {/* Rank filter tabs */}
+              {athlete && (
+                <div className="flex items-center gap-1 mb-3 overflow-x-auto">
+                  {([
+                    { key: "team" as RankFilter, label: "All Team" },
+                    { key: "gender" as RankFilter, label: `All ${athlete.gender === "M" ? "Boys" : "Girls"}` },
+                    { key: "grade" as RankFilter, label: `All ${GRADE_LABELS[athlete.grade] || `Gr ${athlete.grade}`}` },
+                    { key: "gradeGender" as RankFilter, label: `${GRADE_SHORT[athlete.grade] || athlete.grade} ${athlete.gender === "M" ? "Boys" : "Girls"}` },
+                  ]).map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setRankFilter(tab.key)}
+                      className={`px-2.5 py-1 rounded-full font-secondary text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                        rankFilter === tab.key
+                          ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                          : "bg-[var(--secondary)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
-                {filteredSummaries.map((s) => (
+                {filteredSummaries.map((s) => {
+                  const rank = rankings[s.metricId];
+                  const total = rankTotal[s.metricId];
+                  return (
                   <div
                     key={s.metricId}
-                    className="p-4 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]"
+                    className="relative p-4 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]"
                   >
-                    <div className="font-secondary text-xs text-[var(--muted-foreground)] mb-1">
+                    {rank && total && (
+                      <span className="absolute top-2 right-2 font-mono text-[10px] font-bold text-[var(--primary)]">
+                        #{rank}/{total}
+                      </span>
+                    )}
+                    <div className="font-secondary text-xs text-[var(--muted-foreground)] mb-1 pr-10">
                       {s.metricName}
                     </div>
                     <div className="flex items-baseline gap-2">
@@ -369,7 +481,8 @@ function AthleteContent() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
