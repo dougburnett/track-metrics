@@ -437,10 +437,10 @@ function AthleteContent() {
                     className="relative p-4 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]"
                   >
                     {rank && total && (
-                      <div className="absolute top-2 right-2 text-right">
-                        <span className="font-mono text-base font-bold text-[var(--foreground)]">
+                      <div className="absolute top-2 right-2 text-right leading-tight">
+                        <div className="font-mono text-[10px] font-bold text-[var(--foreground)]">
                           {rank}{rank === 1 ? "st" : rank === 2 ? "nd" : rank === 3 ? "rd" : "th"}
-                        </span>
+                        </div>
                         <div className="font-secondary text-[10px] text-[var(--muted-foreground)]">
                           of {total}
                         </div>
