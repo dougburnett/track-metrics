@@ -129,7 +129,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       icon: s.icon,
       description: s.description,
       location: s.location || "",
-      metricIds: stationMetricMap[s.id] || [],
+      metricIds: [...new Set(stationMetricMap[s.id] || [])],
     })));
     setMetrics(mets.map((m) => ({
       id: m.id,
