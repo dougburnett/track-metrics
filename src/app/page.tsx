@@ -41,20 +41,12 @@ export default function Dashboard() {
   // Visible athletes (not hidden)
   const visibleAthletes = useMemo(() => athletes.filter(a => !a.hidden), [athletes]);
 
-  // Load which athletes have any results (distinct)
+  // Derive which athletes have any results from bestResults
   useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("results")
-      .select("athlete_id")
-      .limit(500)
-      .then((res: { data: { athlete_id: string }[] | null }) => {
-        if (res.data) {
-          const ids = new Set(res.data.map((r) => r.athlete_id));
-          setAthletesWithData(ids);
-        }
-      });
-  }, []);
+    if (bestResults.length > 0) {
+      setAthletesWithData(new Set(bestResults.map((r) => r.athlete_id)));
+    }
+  }, [bestResults]);
 
   // Load best results for leaderboards
   useEffect(() => {
@@ -433,7 +425,7 @@ export default function Dashboard() {
                       : "bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]"
                   }`}
                 >
-                  Men ({maleAthletes.length})
+                  Boys ({maleAthletes.length})
                 </button>
                 <button
                   onClick={() => setGenderTab("F")}
@@ -443,7 +435,7 @@ export default function Dashboard() {
                       : "bg-[var(--card)] border border-[var(--border)] text-[var(--muted-foreground)]"
                   }`}
                 >
-                  Women ({femaleAthletes.length})
+                  Girls ({femaleAthletes.length})
                 </button>
               </div>
 
@@ -460,7 +452,7 @@ export default function Dashboard() {
               <div className="hidden min-[350px]:grid grid-cols-2 gap-3">
                 <div>
                   <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
-                    Men ({maleAthletes.length})
+                    Boys ({maleAthletes.length})
                   </h3>
                   <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
                     {maleAthletes.map((a) => renderAthleteRow(a, true))}
@@ -468,7 +460,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h3 className="font-secondary text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-1.5">
-                    Women ({femaleAthletes.length})
+                    Girls ({femaleAthletes.length})
                   </h3>
                   <div className="flex flex-col bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-s)]">
                     {femaleAthletes.map((a) => renderAthleteRow(a, true))}
@@ -1168,7 +1160,7 @@ export default function Dashboard() {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="flex items-center border-t border-[var(--border)] bg-[var(--card)]">
+      <div className="flex items-center border-t border-[var(--border)] bg-[var(--card)] pt-[20px] pb-[30px]">
         <button
           onClick={() => setActiveTab("overview")}
           className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 cursor-pointer transition-colors ${
