@@ -111,8 +111,9 @@ function StationContent() {
     }
   }, [subValues, assignedMetric, isMultiInput]);
 
+  const visibleAthletes = useMemo(() => athletes.filter(a => !a.hidden), [athletes]);
   const completed = Object.keys(results).length;
-  const total = athletes.length;
+  const total = visibleAthletes.length;
 
   // Load today's results + baselines (fast, filtered queries)
   useEffect(() => {
@@ -343,7 +344,7 @@ function StationContent() {
     setSubValues({});
   };
 
-  const filteredAthletes = athletes.filter((a) => {
+  const filteredAthletes = visibleAthletes.filter((a) => {
     const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
     return fullName.includes(search.toLowerCase());
   });
@@ -546,7 +547,7 @@ function StationContent() {
         <button onClick={handleBack} className="cursor-pointer">
           <ArrowLeft size={24} className="text-[var(--foreground)]" />
         </button>
-        <h1 className="font-headline text-lg text-[var(--foreground)]">
+        <h1 className="font-headline text-lg font-bold text-[var(--foreground)]">
           {stationName}
         </h1>
         <button onClick={() => setShowInfo(!showInfo)} className="cursor-pointer">

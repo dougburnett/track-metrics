@@ -43,6 +43,7 @@ export interface Athlete {
   lastName: string;
   grade: number;
   gender: string;
+  hidden: boolean;
 }
 
 // --- Icon list ---
@@ -72,6 +73,7 @@ interface StoreContextType {
   deleteMetric: (id: string) => Promise<void>;
   saveAthlete: (athlete: Athlete) => Promise<void>;
   deleteAthlete: (id: string) => Promise<void>;
+  toggleAthleteHidden: (id: string) => Promise<void>;
   addCategory: (name: string) => Promise<void>;
   renameCategory: (oldName: string, newName: string) => Promise<void>;
   deleteCategory: (name: string) => Promise<void>;
@@ -173,12 +175,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           inputs: m.inputs || null,
           formula: m.formula || "",
         })));
-        setAthletes(aths.map((a: { id: string; first_name: string; last_name: string; grade: number; gender: string }) => ({
+        setAthletes(aths.map((a: { id: string; first_name: string; last_name: string; grade: number; gender: string; hidden?: boolean }) => ({
           id: a.id,
           firstName: a.first_name,
           lastName: a.last_name,
           grade: a.grade,
           gender: a.gender,
+          hidden: a.hidden ?? false,
         })));
       } catch (e) {
         console.error("[store] load error:", e);
@@ -319,6 +322,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       last_name: athlete.lastName,
       grade: athlete.grade,
       gender: athlete.gender,
+      hidden: athlete.hidden,
     };
 
     const isUUID = athlete.id.includes("-") && athlete.id.length > 30;
@@ -344,6 +348,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await supabase.from("athletes").delete().eq("id", id);
     setAthletes(prev => prev.filter(a => a.id !== id));
   }, []);
+
+  const toggleAthleteHidden = useCallback(async (id: string) => {
+    const athlete = athletes.find(a => a.id === id);
+    if (!athlete) return;
+    const newHidden = !athlete.hidden;
+    await supabase.from("athletes").update({ hidden: newHidden }).eq("id", id);
+    setAthletes(prev => prev.map(a => a.id === id ? { ...a, hidden: newHidden } : a));
+  }, [athletes]);
 
   // --- Category CRUD ---
   const addCategory = useCallback(async (name: string) => {
@@ -387,7 +399,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loading,
       saveStation, deleteStation,
       saveMetric, deleteMetric,
-      saveAthlete, deleteAthlete,
+      saveAthlete, deleteAthlete, toggleAthleteHidden,
       addCategory, renameCategory, deleteCategory,
       addUnit, renameUnit, deleteUnit,
     }}>

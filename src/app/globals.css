@@ -56,9 +56,17 @@
   }
 
   .font-headline {
+    font-family: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
+    text-transform: uppercase;
+    font-weight: 400;
+    line-height: 95%;
+  }
+
+  .font-headline-brand {
     font-family: "Quity", var(--font-host-grotesk), "Host Grotesk", sans-serif;
     text-transform: uppercase;
     font-weight: 400;
+    line-height: 95%;
   }
 
   .font-mono {

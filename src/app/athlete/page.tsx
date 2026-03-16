@@ -269,7 +269,7 @@ function AthleteContent() {
           <ArrowLeft size={24} className="text-[var(--foreground)]" />
         </button>
         <h1 className="flex-1 font-headline text-lg text-[var(--foreground)]">
-          {athlete.firstName} {athlete.lastName}
+          Athlete
         </h1>
         {isAdmin && !editing && (
           <button

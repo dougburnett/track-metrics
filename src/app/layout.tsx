@@ -19,7 +19,6 @@ export const metadata: Metadata = {
   title: "Canby Track Metrics",
   description: "Record athletic performance metrics in real time",
   manifest: "/manifest.json",
-  themeColor: "#141F54",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -36,6 +35,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#141F54",
 };
 
 export default function RootLayout({

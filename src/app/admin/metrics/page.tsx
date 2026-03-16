@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Pencil, Trash2, X, Check, LayoutGrid, Users, UserRound, Copy, ChevronRight, Ruler } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, X, Check, LayoutGrid, Users, UserRound, Copy, ChevronRight, Ruler, Eye, EyeOff } from "lucide-react";
 import { useStore, AVAILABLE_ICONS, type Metric, type MetricInput, type Station, type Athlete } from "@/lib/store";
 import { indexToVar } from "@/lib/formula";
 import { useAuth, type UserRole } from "@/lib/auth-context";
@@ -34,7 +34,7 @@ export default function AdminMetricsPage() {
     stations, metrics, athletes, categories, units, loading,
     saveStation, deleteStation: removeStation,
     saveMetric, deleteMetric: removeMetric,
-    saveAthlete, deleteAthlete: removeAthlete,
+    saveAthlete, deleteAthlete: removeAthlete, toggleAthleteHidden,
     addCategory, renameCategory, deleteCategory,
     addUnit, renameUnit, deleteUnit,
   } = useStore();
@@ -110,10 +110,10 @@ export default function AdminMetricsPage() {
   };
 
   // --- Athlete form + handlers ---
-  const [athleteForm, setAthleteForm] = useState<Athlete>({ id: "", firstName: "", lastName: "", grade: 9, gender: "M" });
+  const [athleteForm, setAthleteForm] = useState<Athlete>({ id: "", firstName: "", lastName: "", grade: 9, gender: "M", hidden: false });
   const updateAthleteForm = (field: keyof Athlete, value: string | number) => setAthleteForm((prev) => ({ ...prev, [field]: value }));
 
-  const handleNewAthlete = () => { setAthleteForm({ id: `athlete-${Date.now()}`, firstName: "", lastName: "", grade: 9, gender: "M" }); setView("editAthlete"); };
+  const handleNewAthlete = () => { setAthleteForm({ id: `athlete-${Date.now()}`, firstName: "", lastName: "", grade: 9, gender: "M", hidden: false }); setView("editAthlete"); };
   const handleEditAthlete = (athlete: Athlete) => { setAthleteForm({ ...athlete }); setView("editAthlete"); };
   const handleSaveAthlete = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -337,13 +337,23 @@ export default function AdminMetricsPage() {
         </div>
         <div className="flex-1 overflow-auto">
           {athletes.map((athlete) => (
-            <div key={athlete.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)]">
+            <div key={athlete.id} className={`flex items-center gap-3 px-4 py-3.5 border-b border-[var(--border)] bg-[var(--card)] ${athlete.hidden ? "opacity-50" : ""}`}>
               <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditAthlete(athlete)}>
-                <div className="font-headline text-sm text-[var(--foreground)]">{athlete.firstName} {athlete.lastName}</div>
+                <div className="font-headline text-sm text-[var(--foreground)]">
+                  {athlete.firstName} {athlete.lastName}
+                  {athlete.hidden && (
+                    <span className="ml-2 px-2 py-0.5 rounded-full bg-[var(--secondary)] font-secondary text-[10px] font-semibold text-[var(--muted-foreground)]">
+                      (Hidden)
+                    </span>
+                  )}
+                </div>
                 <div className="font-secondary text-xs text-[var(--muted-foreground)]">
                   Grade {athlete.grade} · {athlete.gender === "M" ? "Male" : "Female"}
                 </div>
               </div>
+              <button onClick={() => toggleAthleteHidden(athlete.id)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors" title={athlete.hidden ? "Show athlete" : "Hide athlete"}>
+                {athlete.hidden ? <EyeOff size={16} className="text-[var(--muted-foreground)]" /> : <Eye size={16} className="text-[var(--muted-foreground)]" />}
+              </button>
               <button onClick={() => handleEditAthlete(athlete)} className="p-2 cursor-pointer hover:bg-[var(--secondary)] rounded-[var(--radius-pill)] transition-colors">
                 <Pencil size={16} className="text-[var(--muted-foreground)]" />
               </button>
@@ -490,7 +500,7 @@ export default function AdminMetricsPage() {
         <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             <button onClick={() => setView("list")} className="cursor-pointer"><ArrowLeft size={24} className="text-[var(--foreground)]" /></button>
-            <h1 className="font-headline text-lg text-[var(--foreground)]">Stations</h1>
+            <h1 className="font-headline text-lg font-bold text-[var(--foreground)]">Stations</h1>
           </div>
           {isSuperAdmin && (
             <button onClick={handleNewStation} className="flex items-center gap-1.5 h-10 px-4 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-sm font-semibold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer">
@@ -512,7 +522,7 @@ export default function AdminMetricsPage() {
                   <DynamicIcon name={station.icon} size={18} className="text-[var(--primary-foreground)]" />
                 </div>
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleEditStation(station)}>
-                  <div className="font-headline text-sm text-[var(--foreground)]">{station.name}</div>
+                  <div className="font-headline text-xs font-bold text-[var(--foreground)]">{station.name}</div>
                   <div className="font-secondary text-xs text-[var(--muted-foreground)]">
                     {metricLabel}
                     {station.location ? ` · ${station.location}` : ""}
