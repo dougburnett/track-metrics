@@ -648,17 +648,23 @@ function StationContent() {
   const showStats = sessionStats !== null || allTimeStats !== null;
 
   const renderAthleteRow = (athlete: typeof athletes[0], compact: boolean) => {
-    const isDone = isMultiMetric
+    const isDoneToday = isMultiMetric
       ? assignedMetrics.every(m => !!allResults[m.id]?.[athlete.id])
       : !!results[athlete.id];
+    const hasAnyData = isMultiMetric
+      ? assignedMetrics.some(m => !!(allResults[m.id]?.[athlete.id] || allTimeResults[m.id]?.[athlete.id]))
+      : !!(results[athlete.id] || allTimeBestForMetric[athlete.id]);
     const isSelected = selectedId === athlete.id;
 
-    // Collect all metric values for this athlete (for inline display)
+    // Collect all metric values for this athlete (today first, fall back to all-time)
     const metricValues = isMultiMetric ? assignedMetrics.map(m => {
-      const r = allResults[m.id]?.[athlete.id];
+      const todayR = allResults[m.id]?.[athlete.id];
+      const allTimeR = allTimeResults[m.id]?.[athlete.id];
+      const r = todayR || allTimeR;
       if (!r) return null;
       const num = parseFloat(r.value);
-      return m.timeInput ? formatTimeDisplay(num) : String(fmtVal(num));
+      const display = m.timeInput ? formatTimeDisplay(num) : String(fmtVal(num));
+      return { display, isToday: !!todayR };
     }) : null;
 
     return (
@@ -669,7 +675,7 @@ function StationContent() {
         className={`flex items-center ${compact ? "gap-2 px-2.5 py-2" : "gap-3 px-4 py-3"} w-full border-b border-[var(--border)] last:border-b-0 text-left transition-colors cursor-pointer disabled:cursor-default ${
           isSelected
             ? "bg-[var(--primary)]"
-            : isDone
+            : isDoneToday
             ? "bg-[var(--color-success)] hover:opacity-90"
             : "hover:bg-[var(--secondary)]"
         }`}
@@ -706,19 +712,19 @@ function StationContent() {
                 key={assignedMetrics[i].id}
                 className={`font-mono ${compact ? "text-[9px]" : "text-[10px]"} font-semibold ${
                   v !== null
-                    ? assignedMetrics[i].id === selectedMetricId
+                    ? v.isToday
                       ? "text-[var(--color-success-foreground)]"
-                      : "text-[var(--muted-foreground)]"
+                      : "text-[var(--muted-foreground)] opacity-60"
                     : "text-[var(--muted-foreground)] opacity-30"
                 }`}
               >
-                {v !== null ? v : "—"}
+                {v !== null ? v.display : "—"}
               </span>
             ))}
           </div>
         )}
         {/* Single metric value display */}
-        {!isMultiMetric && isDone && !isSelected ? (
+        {!isMultiMetric && !isSelected && isDoneToday ? (
           <>
             <span className={`font-mono ${compact ? "text-xs" : "text-sm"} font-semibold text-[var(--color-success-foreground)] shrink-0`}>
               {assignedMetric?.timeInput ? formatTimeDisplay(parseFloat(results[athlete.id])) : fmtVal(parseFloat(results[athlete.id]))}
@@ -729,6 +735,10 @@ function StationContent() {
               <Check size={16} className="text-[var(--color-success-foreground)]" />
             ) : null}
           </>
+        ) : !isMultiMetric && !isSelected && allTimeBestForMetric[athlete.id] ? (
+          <span className={`font-mono ${compact ? "text-xs" : "text-sm"} text-[var(--muted-foreground)] opacity-60 shrink-0`}>
+            {assignedMetric?.timeInput ? formatTimeDisplay(parseFloat(allTimeBestForMetric[athlete.id])) : fmtVal(parseFloat(allTimeBestForMetric[athlete.id]))}
+          </span>
         ) : isSelected ? (
           <Pencil size={compact ? 12 : 16} className="text-[var(--primary-foreground)] shrink-0" />
         ) : !isMultiMetric ? (
@@ -736,13 +746,13 @@ function StationContent() {
             —
           </span>
         ) : null}
-        {/* Multi-metric: show pencil/check for selected metric */}
-        {isMultiMetric && isDone && !isSelected && (
+        {/* Multi-metric: show pencil/check icon */}
+        {isMultiMetric && hasAnyData && !isSelected && (
           canRecord ? (
-            <Pencil size={compact ? 10 : 14} className="text-[var(--color-success-foreground)] opacity-60 shrink-0" />
-          ) : (
+            <Pencil size={compact ? 10 : 14} className={`${isDoneToday ? "text-[var(--color-success-foreground)]" : "text-[var(--muted-foreground)]"} opacity-60 shrink-0`} />
+          ) : isDoneToday ? (
             <Check size={compact ? 12 : 16} className="text-[var(--color-success-foreground)] shrink-0" />
-          )
+          ) : null
         )}
       </button>
     );
