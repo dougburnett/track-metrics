@@ -696,34 +696,65 @@ export default function AdminMetricsPage() {
               <p className="font-secondary text-xs text-[var(--muted-foreground)]">Single value input (default). Add inputs for multi-value metrics.</p>
             ) : (
               <div className="flex flex-col gap-2">
-                {form.inputs.map((inp, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="font-mono text-sm font-bold text-[var(--primary)] w-6 text-center shrink-0">{indexToVar(i)}</span>
-                    <input
-                      value={inp.label}
-                      onChange={(e) => {
-                        const next = [...form.inputs!];
-                        next[i] = { ...next[i], label: e.target.value };
-                        updateForm("inputs", next);
-                      }}
-                      placeholder={`Label for input ${indexToVar(i)}`}
-                      disabled={!isSuperAdmin}
-                      className={inputCls + " flex-1 min-w-0" + (!isSuperAdmin ? " opacity-60" : "")}
-                    />
-                    {isSuperAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = form.inputs!.filter((_, j) => j !== i);
-                          updateForm("inputs", next.length === 0 ? null : next);
-                        }}
-                        className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors shrink-0"
-                      >
-                        <Trash2 size={14} className="text-[var(--destructive)]" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                {form.inputs.map((inp, i) => {
+                  const otherMetrics = metrics.filter(m => m.id !== form.id);
+                  return (
+                    <div key={i} className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-bold text-[var(--primary)] w-6 text-center shrink-0">{indexToVar(i)}</span>
+                        <input
+                          value={inp.label}
+                          onChange={(e) => {
+                            const next = [...form.inputs!];
+                            next[i] = { ...next[i], label: e.target.value };
+                            updateForm("inputs", next);
+                          }}
+                          placeholder={`Label for input ${indexToVar(i)}`}
+                          disabled={!isSuperAdmin}
+                          className={inputCls + " flex-1 min-w-0" + (!isSuperAdmin ? " opacity-60" : "")}
+                        />
+                        {isSuperAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = form.inputs!.filter((_, j) => j !== i);
+                              updateForm("inputs", next.length === 0 ? null : next);
+                            }}
+                            className="p-2 cursor-pointer hover:bg-[var(--color-error)] rounded-[var(--radius-pill)] transition-colors shrink-0"
+                          >
+                            <Trash2 size={14} className="text-[var(--destructive)]" />
+                          </button>
+                        )}
+                      </div>
+                      {isSuperAdmin && (
+                        <div className="flex items-center gap-2 ml-8">
+                          <select
+                            value={inp.metricId || ""}
+                            onChange={(e) => {
+                              const next = [...form.inputs!];
+                              const selectedMetric = otherMetrics.find(m => m.id === e.target.value);
+                              next[i] = {
+                                ...next[i],
+                                metricId: e.target.value || undefined,
+                                label: e.target.value && selectedMetric ? selectedMetric.acronym : next[i].label,
+                              };
+                              updateForm("inputs", next);
+                            }}
+                            className={inputCls + " flex-1 min-w-0 appearance-none cursor-pointer text-xs h-8"}
+                          >
+                            <option value="">Manual input</option>
+                            {otherMetrics.map(m => (
+                              <option key={m.id} value={m.id}>{m.name} ({m.acronym})</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {form.inputs.every(inp => !!inp.metricId) && form.inputs.length > 0 && (
+                  <p className="font-secondary text-xs text-[var(--primary)] ml-8">Auto-computes when source metrics have results</p>
+                )}
               </div>
             )}
           </div>

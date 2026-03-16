@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo, Suspense } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Info, Search, Check, Pencil, Undo2, X, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
-import { useStore } from "@/lib/store";
+import { useStore, isDerivedMetric } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
 import { useSync } from "@/lib/sync-manager";
 import { createClient } from "@/lib/supabase";
@@ -142,6 +142,57 @@ function StationContent() {
       return null;
     }
   }, [subValues, assignedMetric, isMultiInput]);
+
+  // Compute derived metric value from other metrics' results
+  const computeDerivedValue = useCallback((
+    metric: typeof assignedMetrics[0],
+    athleteId: string,
+    resultsMap: typeof allResults,
+    currentMultiValues?: typeof multiValues,
+    currentTimeFields?: typeof timeFields,
+  ): number | null => {
+    if (!metric.inputs || !isDerivedMetric(metric)) return null;
+    const numericValues: Record<string, number> = {};
+    let allFound = true;
+    metric.inputs.forEach((inp, i) => {
+      const key = indexToVar(i);
+      const srcMetricId = inp.metricId!;
+      // Check unsaved current values first
+      if (currentMultiValues && currentMultiValues[srcMetricId]) {
+        const n = parseFloat(currentMultiValues[srcMetricId]);
+        if (!isNaN(n)) { numericValues[key] = n; return; }
+      }
+      if (currentTimeFields && currentTimeFields[srcMetricId]) {
+        const secs = timeFieldsToSeconds(currentTimeFields[srcMetricId]);
+        if (secs > 0) { numericValues[key] = secs; return; }
+      }
+      // Fall back to saved results
+      const saved = resultsMap[srcMetricId]?.[athleteId];
+      if (saved) {
+        const n = parseFloat(saved.value);
+        if (!isNaN(n)) { numericValues[key] = n; return; }
+      }
+      allFound = false;
+    });
+    if (!allFound) return null;
+    try {
+      const formula = metric.formula || metric.inputs.map((_, i) => indexToVar(i)).join(" + ");
+      const result = evaluateFormula(formula, numericValues);
+      return isFinite(result) ? result : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Live preview of derived metric values for the selected athlete
+  const derivedDisplayValues = useMemo(() => {
+    if (!selectedId) return {};
+    const out: Record<string, number | null> = {};
+    assignedMetrics.filter(isDerivedMetric).forEach(m => {
+      out[m.id] = computeDerivedValue(m, selectedId, allResults, multiValues, timeFields);
+    });
+    return out;
+  }, [selectedId, assignedMetrics, allResults, multiValues, timeFields, computeDerivedValue]);
 
   const visibleAthletes = useMemo(() => athletes.filter(a => !a.hidden), [athletes]);
   const completed = isMultiMetric
@@ -462,7 +513,28 @@ function StationContent() {
             }
           }
         }
+        // Auto-save derived metrics after source metrics are saved
         if (savedAny) {
+          // Build a fresh snapshot of allResults with what we just saved
+          const freshResults = { ...allResults };
+          // (allResults was updated via setAllResults above, but state hasn't flushed yet,
+          //  so we need to use the values we just saved inline)
+          for (const m of assignedMetrics) {
+            if (!isDerivedMetric(m)) continue;
+            const derivedVal = computeDerivedValue(m, selectedId, freshResults, multiValues, timeFields);
+            if (derivedVal === null) continue;
+            const existingDerivedId = freshResults[m.id]?.[selectedId]?.resultId;
+            const derivedSavedId = await saveOneMetric(supabase, selectedId, m, derivedVal, existingDerivedId);
+            if (derivedSavedId) {
+              const displayVal = Number.isInteger(derivedVal) ? String(derivedVal) : derivedVal.toFixed(2);
+              // Update freshResults so chained derived metrics can use it
+              if (!freshResults[m.id]) freshResults[m.id] = {};
+              freshResults[m.id][selectedId] = { value: displayVal, resultId: derivedSavedId };
+              setAllResults(prev => ({ ...prev, [m.id]: { ...(prev[m.id] || {}), [selectedId]: { value: displayVal, resultId: derivedSavedId } } }));
+              updateAllTime(m.id, selectedId, derivedVal, derivedSavedId);
+              if (derivedSavedId.startsWith("temp-")) offlineAny = true;
+            }
+          }
           if (offlineAny) showToast({ message: "Saved offline", type: "success" });
           setSelectedId(null);
           setMultiValues({});
@@ -829,6 +901,19 @@ function StationContent() {
             /* Multi-metric: one input row per metric */
             <div className="w-full flex flex-col gap-3">
               {assignedMetrics.map((m, mIdx) => {
+                // Derived metrics: show computed value read-only
+                if (isDerivedMetric(m)) {
+                  const derivedVal = derivedDisplayValues[m.id];
+                  return (
+                    <div key={m.id} className="flex items-center gap-3">
+                      <span className="font-mono text-xs font-bold text-[var(--primary)] w-12 shrink-0">{m.acronym}</span>
+                      <span className="flex-1 font-mono text-lg font-bold text-[var(--foreground)] text-center opacity-70">
+                        {derivedVal !== null && derivedVal !== undefined ? (Number.isInteger(derivedVal) ? derivedVal : derivedVal.toFixed(2)) : "—"}
+                      </span>
+                      <span className="font-secondary text-[10px] text-[var(--muted-foreground)] shrink-0">auto</span>
+                    </div>
+                  );
+                }
                 const mIsFormula = !!(m.inputs && m.inputs.length > 1);
                 if (mIsFormula) {
                   const mSubs = multiSubValues[m.id] || {};
@@ -1010,7 +1095,16 @@ function StationContent() {
             onClick={handleSave}
             disabled={saving || (
               isMultiMetric
-                ? !Object.values(multiValues).some(v => v !== "") && !Object.values(multiSubValues).some(sv => Object.values(sv).some(v => v !== "")) && !Object.values(timeFields).some(tf => tf.min !== "" || tf.sec !== "")
+                ? (() => {
+                    // Exclude derived metrics from the "has value" check
+                    const nonDerived = assignedMetrics.filter(m => !isDerivedMetric(m));
+                    const hasNonDerivedValue = nonDerived.some(m => {
+                      if (m.timeInput) { const tf = timeFields[m.id]; return tf && (tf.min !== "" || tf.sec !== ""); }
+                      if (m.inputs && m.inputs.length > 1) { const sv = multiSubValues[m.id]; return sv && Object.values(sv).some(v => v !== ""); }
+                      return multiValues[m.id] && multiValues[m.id] !== "";
+                    });
+                    return !hasNonDerivedValue;
+                  })()
                 : isMultiInput ? computedResult === null : assignedMetric?.timeInput ? !Object.values(timeFields).some(tf => tf.min !== "" || tf.sec !== "") : !value
             )}
             className="w-full max-w-[280px] h-12 rounded-[var(--radius-pill)] bg-[var(--primary)] font-secondary text-base font-bold text-[var(--primary-foreground)] hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"

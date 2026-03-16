@@ -19,6 +19,12 @@ export interface Station {
 
 export interface MetricInput {
   label: string;
+  metricId?: string;
+}
+
+/** Returns true when ALL inputs reference other metrics (fully derived / auto-computed). */
+export function isDerivedMetric(metric: Metric): boolean {
+  return !!(metric.inputs && metric.inputs.length > 0 && metric.inputs.every(inp => !!inp.metricId));
 }
 
 export interface Metric {
