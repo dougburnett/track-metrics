@@ -41,6 +41,10 @@ function LoginContent() {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(""); setMessage("");
+    if (!email.endsWith("@k12.canby.or.us")) {
+      setError("You must use a @k12.canby.or.us email address.");
+      return;
+    }
     setLoading(true);
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -140,7 +144,7 @@ function LoginContent() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="coach@school.edu"
+                placeholder="name@email.com"
                 className={inputCls}
                 required
               />

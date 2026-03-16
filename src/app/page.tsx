@@ -5,15 +5,19 @@ import { Search, Settings, User, LayoutGrid, Users, Trophy, ChevronLeft, Clipboa
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth-context";
+import { useSync } from "@/lib/sync-manager";
 import { createClient } from "@/lib/supabase";
 import type { Metric } from "@/lib/store";
 import { DynamicIcon } from "@/components/DynamicIcon";
 import { Skeleton } from "@/components/Skeleton";
+import { OfflineIndicator } from "@/components/OfflineIndicator";
+import { getAllItems, putItem, getItem, deleteItem, addToSyncQueue } from "@/lib/offline-db";
 
 export default function Dashboard() {
   const router = useRouter();
   const { stations, metrics, athletes, loading } = useStore();
   const { role, user } = useAuth();
+  const { isOnline, refreshPendingCount } = useSync();
   const isAdmin = role === "admin" || role === "super_admin";
   const [activeTab, setActiveTab] = useState<"overview" | "athletes" | "leaderboards" | "attendance">("overview");
   const [search, setSearch] = useState("");
@@ -91,7 +95,7 @@ export default function Dashboard() {
   }, [bestResults, visibleAthletes, metrics, lbGenderFilter, lbGradeFilter]);
 
   const formatValue = (value: number, metric: Metric) => {
-    if (metric.unit === "seconds" || metric.unit === "s") {
+    if (metric.timeInput || metric.unit === "seconds" || metric.unit === "s") {
       const mins = Math.floor(value / 60);
       const secs = value % 60;
       if (mins > 0) return `${mins}:${secs < 10 ? "0" : ""}${secs.toFixed(2)}`;
@@ -141,9 +145,27 @@ export default function Dashboard() {
     return true;
   });
 
-  // Load attendance records when date or tab changes
+  // Load attendance records when date or tab changes (IDB-first)
   useEffect(() => {
     if (activeTab !== "attendance") return;
+
+    // Step 1: Try IDB cache
+    (async () => {
+      try {
+        const idbAttendance = await getAllItems<{ id: string; athlete_id: string; date: string; status: string }>("attendance");
+        const dateRecords = idbAttendance.filter(r => r.date === attendanceDate);
+        if (dateRecords.length > 0) {
+          const records: Record<string, string> = {};
+          dateRecords.forEach((r) => { records[r.athlete_id] = r.status; });
+          setAttendanceRecords(records);
+          setAttendanceDirty(false);
+        }
+      } catch {
+        // IDB not available
+      }
+    })();
+
+    // Step 2: Background refresh from Supabase
     const supabase = createClient();
     supabase
       .from("attendance")
@@ -177,17 +199,8 @@ export default function Dashboard() {
   const handleAttendanceSave = useCallback(async () => {
     if (attendanceSaving) return;
     setAttendanceSaving(true);
-    const supabase = createClient();
 
-    // Get current DB records for this date to know what to delete
-    const { data: existing } = await supabase
-      .from("attendance")
-      .select("id, athlete_id")
-      .eq("date", attendanceDate);
-
-    const existingMap = new Map((existing || []).map((r: { id: string; athlete_id: string }) => [r.athlete_id, r.id]));
-
-    // Upserts for records with status
+    // Build upserts and deletes
     const upserts = Object.entries(attendanceRecords)
       .filter(([, status]) => status)
       .map(([athlete_id, status]) => ({
@@ -197,20 +210,81 @@ export default function Dashboard() {
         recorded_by: user?.id,
       }));
 
-    // Deletes for records that were cleared
-    const athleteIdsWithStatus = new Set(upserts.map(u => u.athlete_id));
-    const deleteIds = (existing || [])
-      .filter((r: { id: string; athlete_id: string }) => !athleteIdsWithStatus.has(r.athlete_id))
-      .map((r: { id: string }) => r.id);
+    if (!isOnline) {
+      // Offline path: write to IDB + sync queue
+      try {
+        for (const record of upserts) {
+          const idbRecord = { id: `${record.athlete_id}-${record.date}`, ...record };
+          await putItem("attendance", idbRecord);
+          await addToSyncQueue({
+            table: "attendance",
+            operation: "UPSERT",
+            payload: record,
+            created_at: new Date().toISOString(),
+            status: "pending",
+            attempts: 0,
+          });
+        }
+        // Handle cleared records (queue DELETE operations)
+        const allAthleteIds = visibleAthletes.map(a => a.id);
+        const athleteIdsWithStatus = new Set(upserts.map(u => u.athlete_id));
+        for (const athleteId of allAthleteIds) {
+          if (!athleteIdsWithStatus.has(athleteId)) {
+            // Check if there was a previous record in IDB
+            const idbKey = `${athleteId}-${attendanceDate}`;
+            try {
+              const existing = await getItem("attendance", idbKey);
+              if (existing) {
+                await deleteItem("attendance", idbKey);
+                await addToSyncQueue({
+                  table: "attendance",
+                  operation: "DELETE",
+                  payload: { athlete_id: athleteId, date: attendanceDate },
+                  created_at: new Date().toISOString(),
+                  status: "pending",
+                  attempts: 0,
+                });
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+        refreshPendingCount();
+      } catch {
+        // IDB write failed
+      }
+    } else {
+      // Online path: Supabase first, then write to IDB
+      const supabase = createClient();
+      const { data: existing } = await supabase
+        .from("attendance")
+        .select("id, athlete_id")
+        .eq("date", attendanceDate);
 
-    if (upserts.length > 0) {
-      await supabase.from("attendance").upsert(upserts, { onConflict: "athlete_id,date" });
-    }
-    if (deleteIds.length > 0) {
-      await supabase.from("attendance").delete().in("id", deleteIds);
+      const athleteIdsWithStatus = new Set(upserts.map(u => u.athlete_id));
+      const deleteIds = (existing || [])
+        .filter((r: { id: string; athlete_id: string }) => !athleteIdsWithStatus.has(r.athlete_id))
+        .map((r: { id: string }) => r.id);
+
+      if (upserts.length > 0) {
+        await supabase.from("attendance").upsert(upserts, { onConflict: "athlete_id,date" });
+      }
+      if (deleteIds.length > 0) {
+        await supabase.from("attendance").delete().in("id", deleteIds);
+      }
+
+      // Also write to IDB
+      try {
+        for (const record of upserts) {
+          await putItem("attendance", { id: `${record.athlete_id}-${record.date}`, ...record });
+        }
+      } catch {
+        // IDB write failed, not critical
+      }
     }
 
-    // Sync local allAttendance
+    // Sync local allAttendance state
     setAllAttendance(prev => {
       const filtered = prev.filter(r => r.date !== attendanceDate);
       const newRecords = Object.entries(attendanceRecords)
@@ -221,7 +295,7 @@ export default function Dashboard() {
 
     setAttendanceDirty(false);
     setAttendanceSaving(false);
-  }, [attendanceRecords, attendanceDate, attendanceSaving, user?.id]);
+  }, [attendanceRecords, attendanceDate, attendanceSaving, user?.id, isOnline, visibleAthletes, refreshPendingCount]);
 
   // Attendance helpers
   const attendanceGradeAthletes = useMemo(() => {
@@ -320,6 +394,7 @@ export default function Dashboard() {
           Canby Track Metrics
         </h1>
         <div className="flex items-center gap-3">
+          <OfflineIndicator />
           {(role === "super_admin" || role === "admin") && (
             <button onClick={() => router.push("/admin/metrics")} className="cursor-pointer" title="Settings">
               <Settings size={20} className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors" />

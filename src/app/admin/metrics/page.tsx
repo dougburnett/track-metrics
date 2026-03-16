@@ -51,7 +51,7 @@ export default function AdminMetricsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Metric form
-  const [form, setForm] = useState<Metric>({ id: "", name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "", lowerIsBetter: false, minValue: null, maxValue: null, unit: "", inputs: null, formula: "" });
+  const [form, setForm] = useState<Metric>({ id: "", name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "", lowerIsBetter: false, minValue: null, maxValue: null, unit: "", inputs: null, formula: "", timeInput: false });
   const updateForm = (field: keyof Metric, value: string | boolean | number | null | MetricInput[]) => setForm((prev) => ({ ...prev, [field]: value }));
 
   // Station form
@@ -70,7 +70,7 @@ export default function AdminMetricsPage() {
 
   // --- Metric handlers ---
   const handleEditMetric = (metric: Metric) => { setEditingId(metric.id); setForm({ ...metric }); setView("editMetric"); };
-  const handleNewMetric = () => { setForm({ id: `metric-${Date.now()}`, name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "", lowerIsBetter: false, minValue: null, maxValue: null, unit: "", inputs: null, formula: "" }); setEditingId(null); setView("editMetric"); };
+  const handleNewMetric = () => { setForm({ id: `metric-${Date.now()}`, name: "", acronym: "", category: "", instructions: "", measurementRules: "", gear: "", drills: "", lowerIsBetter: false, minValue: null, maxValue: null, unit: "", inputs: null, formula: "", timeInput: false }); setEditingId(null); setView("editMetric"); };
   const handleSaveMetric = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || saving) return;
@@ -756,6 +756,22 @@ export default function AdminMetricsPage() {
               className={`w-12 h-7 rounded-full transition-colors ${isSuperAdmin ? "cursor-pointer" : "opacity-60"} ${form.lowerIsBetter ? "bg-[var(--primary)]" : "bg-[var(--input)]"}`}
             >
               <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform mx-1 ${form.lowerIsBetter ? "translate-x-5" : "translate-x-0"}`} />
+            </button>
+          </div>
+
+          {/* Time input toggle */}
+          <div className="flex items-center justify-between p-3 bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-m)]">
+            <div>
+              <label className="font-secondary text-sm font-medium text-[var(--foreground)]">Time input (mm:ss)</label>
+              <p className="font-secondary text-xs text-[var(--muted-foreground)]">Enter values as minutes:seconds</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => isSuperAdmin && updateForm("timeInput", !form.timeInput)}
+              disabled={!isSuperAdmin}
+              className={`w-12 h-7 rounded-full transition-colors ${isSuperAdmin ? "cursor-pointer" : "opacity-60"} ${form.timeInput ? "bg-[var(--primary)]" : "bg-[var(--input)]"}`}
+            >
+              <div className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform mx-1 ${form.timeInput ? "translate-x-5" : "translate-x-0"}`} />
             </button>
           </div>
 

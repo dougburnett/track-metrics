@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Host_Grotesk, JetBrains_Mono } from "next/font/google";
 import { StoreProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth-context";
+import { SyncProvider } from "@/lib/sync-manager";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import "./globals.css";
 
@@ -49,12 +50,14 @@ export default function RootLayout({
         className={`${hostGrotesk.variable} ${jetbrainsMono.variable} h-full antialiased font-secondary`}
       >
         <AuthProvider>
-          <StoreProvider>
-            <div className="mx-auto w-full max-w-2xl h-full">
-              {children}
-            </div>
-            <PWAInstallPrompt />
-          </StoreProvider>
+          <SyncProvider>
+            <StoreProvider>
+              <div className="mx-auto w-full max-w-2xl h-full">
+                {children}
+              </div>
+              <PWAInstallPrompt />
+            </StoreProvider>
+          </SyncProvider>
         </AuthProvider>
       </body>
     </html>

@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { createClient } from "./supabase";
 import { useAuth } from "./auth-context";
+import { getAllItems, putItems, putItem, clearAllStores } from "./offline-db";
 
 // --- Types ---
 
@@ -35,6 +36,7 @@ export interface Metric {
   unit: string;
   inputs: MetricInput[] | null;
   formula: string;
+  timeInput: boolean;
 }
 
 export interface Athlete {
@@ -95,6 +97,85 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const loadedForUser = useRef<string | null>(null);
 
+  // Apply raw Supabase-format data to React state (camelCase conversion)
+  function applyData(
+    cats: { id: string; name: string }[],
+    stas: { id: string; slug: string; name: string; icon: string; description: string; location: string }[],
+    mets: { id: string; name: string; acronym: string; category_id: string; instructions: string; measurement_rules: string; gear: string; drills: string; lower_is_better: boolean; min_value: number | null; max_value: number | null; unit: string; inputs: MetricInput[] | null; formula: string; time_input?: boolean }[],
+    aths: { id: string; first_name: string; last_name: string; grade: number; gender: string; hidden?: boolean }[],
+    uns: { id: string; name: string }[],
+    sms: { id: string; station_id: string; metric_id: string; sort_order?: number }[],
+  ) {
+    const stationMetricMap: Record<string, string[]> = {};
+    sms.forEach((sm) => {
+      if (!stationMetricMap[sm.station_id]) stationMetricMap[sm.station_id] = [];
+      stationMetricMap[sm.station_id].push(sm.metric_id);
+    });
+    const catMap: Record<string, string> = {};
+    cats.forEach((c) => { catMap[c.id] = c.name; });
+
+    setCategories(cats.map((c) => c.name));
+    setUnits(uns.map((u) => u.name));
+    setStations(stas.map((s) => ({
+      id: s.slug,
+      slug: s.slug,
+      name: s.name,
+      icon: s.icon,
+      description: s.description,
+      location: s.location || "",
+      metricIds: stationMetricMap[s.id] || [],
+    })));
+    setMetrics(mets.map((m) => ({
+      id: m.id,
+      name: m.name,
+      acronym: m.acronym,
+      category: (catMap[m.category_id] || "").toLowerCase(),
+      instructions: m.instructions,
+      measurementRules: m.measurement_rules,
+      gear: m.gear,
+      drills: m.drills,
+      lowerIsBetter: m.lower_is_better,
+      minValue: m.min_value,
+      maxValue: m.max_value,
+      unit: m.unit || "",
+      inputs: m.inputs || null,
+      formula: m.formula || "",
+      timeInput: m.time_input ?? false,
+    })));
+    setAthletes(aths.map((a) => ({
+      id: a.id,
+      firstName: a.first_name,
+      lastName: a.last_name,
+      grade: a.grade,
+      gender: a.gender,
+      hidden: a.hidden ?? false,
+    })));
+  }
+
+  // Write raw Supabase-format data to IDB cache
+  async function writeToIDB(
+    cats: Record<string, unknown>[],
+    stas: Record<string, unknown>[],
+    mets: Record<string, unknown>[],
+    aths: Record<string, unknown>[],
+    uns: Record<string, unknown>[],
+    sms: Record<string, unknown>[],
+  ) {
+    try {
+      await Promise.all([
+        putItems("categories", cats),
+        putItems("stations", stas),
+        putItems("metrics", mets),
+        putItems("athletes", aths),
+        putItems("units", uns),
+        putItems("station_metrics", sms),
+        putItem("meta", { key: "last_synced", value: new Date().toISOString() }),
+      ]);
+    } catch (e) {
+      console.warn("[store] IDB write failed:", e);
+    }
+  }
+
   // Load from Supabase once auth is ready and user exists
   useEffect(() => {
     console.log("[store] effect: authLoading=", authLoading, "user=", user?.email ?? "null", "loadedFor=", loadedForUser.current);
@@ -121,6 +202,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     console.log("[store] loading data for user:", user.email);
 
     async function load() {
+      // Step 1: Try IDB cache first for instant load
+      try {
+        const meta = await getAllItems<{ key: string; value: string }>("meta");
+        const lastSynced = meta.find(m => m.key === "last_synced");
+        if (lastSynced) {
+          const [cats, stas, mets, aths, uns, sms] = await Promise.all([
+            getAllItems("categories"),
+            getAllItems("stations"),
+            getAllItems("metrics"),
+            getAllItems("athletes"),
+            getAllItems("units"),
+            getAllItems("station_metrics"),
+          ]);
+          if (cats.length > 0 || stas.length > 0) {
+            console.log("[store] loaded from IDB cache (last synced:", lastSynced.value, ")");
+            applyData(
+              cats as Parameters<typeof applyData>[0],
+              stas as Parameters<typeof applyData>[1],
+              mets as Parameters<typeof applyData>[2],
+              aths as Parameters<typeof applyData>[3],
+              uns as Parameters<typeof applyData>[4],
+              sms as Parameters<typeof applyData>[5],
+            );
+            setLoading(false);
+          }
+        }
+      } catch (e) {
+        console.warn("[store] IDB read failed:", e);
+      }
+
+      // Step 2: Background fetch from Supabase
       try {
         const [catRes, staRes, metRes, athRes, unitRes, smRes] = await Promise.all([
           supabase.from("categories").select("*").order("name"),
@@ -138,53 +250,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const uns = unitRes.data || [];
         const sms = smRes.data || [];
 
-        // Build station_id -> metric_ids map
-        const stationMetricMap: Record<string, string[]> = {};
-        sms.forEach((sm: { station_id: string; metric_id: string }) => {
-          if (!stationMetricMap[sm.station_id]) stationMetricMap[sm.station_id] = [];
-          stationMetricMap[sm.station_id].push(sm.metric_id);
-        });
-
-        const catMap: Record<string, string> = {};
-        cats.forEach((c: { id: string; name: string }) => { catMap[c.id] = c.name; });
-
-        setCategories(cats.map((c: { name: string }) => c.name));
-        setUnits(uns.map((u: { name: string }) => u.name));
-        setStations(stas.map((s: { id: string; slug: string; name: string; icon: string; description: string; location: string }) => ({
-          id: s.slug,
-          slug: s.slug,
-          name: s.name,
-          icon: s.icon,
-          description: s.description,
-          location: s.location || "",
-          metricIds: stationMetricMap[s.id] || [],
-        })));
-        setMetrics(mets.map((m: { id: string; name: string; acronym: string; category_id: string; instructions: string; measurement_rules: string; gear: string; drills: string; lower_is_better: boolean; min_value: number | null; max_value: number | null; unit: string; inputs: MetricInput[] | null; formula: string }) => ({
-          id: m.id,
-          name: m.name,
-          acronym: m.acronym,
-          category: (catMap[m.category_id] || "").toLowerCase(),
-          instructions: m.instructions,
-          measurementRules: m.measurement_rules,
-          gear: m.gear,
-          drills: m.drills,
-          lowerIsBetter: m.lower_is_better,
-          minValue: m.min_value,
-          maxValue: m.max_value,
-          unit: m.unit || "",
-          inputs: m.inputs || null,
-          formula: m.formula || "",
-        })));
-        setAthletes(aths.map((a: { id: string; first_name: string; last_name: string; grade: number; gender: string; hidden?: boolean }) => ({
-          id: a.id,
-          firstName: a.first_name,
-          lastName: a.last_name,
-          grade: a.grade,
-          gender: a.gender,
-          hidden: a.hidden ?? false,
-        })));
+        applyData(cats, stas, mets, aths, uns, sms);
+        writeToIDB(cats, stas, mets, aths, uns, sms);
       } catch (e) {
-        console.error("[store] load error:", e);
+        console.error("[store] Supabase load error:", e);
+        // IDB data already loaded above if available
       }
       console.log("[store] load complete, setting loading=false");
       setLoading(false);
@@ -288,6 +358,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       unit: metric.unit || "",
       inputs: metric.inputs,
       formula: metric.formula || "",
+      time_input: metric.timeInput,
     };
 
     // Check if this is a UUID (existing DB record) or a local id
